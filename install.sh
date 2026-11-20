@@ -24,6 +24,7 @@ for arg in "$@"; do
 done
 
 [ "$(id -u)" = 0 ] || { echo "Run as root: sudo $0" >&2; exit 1; }
+umask 022       # files we create must be readable by the TV user
 UPDATE="${LUMEN_UPDATE:-0}"
 # An update keeps the choices made when Lumen TV was first installed.
 if [ "$UPDATE" = 1 ] && grep -qx "ANDROID=0" /etc/lumen/install.conf 2>/dev/null; then
@@ -128,6 +129,11 @@ fi
 mkdir -p /etc/lumen
 [ -f /etc/lumen/update.conf ] || cp "$SRC/config/update.conf" /etc/lumen/update.conf
 echo "ANDROID=$ANDROID" > /etc/lumen/install.conf
+# The TV user must be able to read everything, whatever the source's
+# permissions were.
+chown -R root:root "$DEST"
+chmod -R u=rwX,go=rX "$DEST" /etc/lumen
+chmod 755 "$DEST"/bin/*
 chmod 755 "$DEST"/bin/*
 for bin in "$DEST"/bin/*; do
     ln -sf "$bin" "/usr/local/bin/$(basename "$bin")"
