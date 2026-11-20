@@ -30,7 +30,7 @@ def label(text, css, **props):
     return widget
 
 
-def animate(widget, adj, target, ms=150):
+def animate(widget, adj, target, ms=210):
     """Ease a scroll adjustment to `target` (clamped once layout is known)."""
     token = object()
     adj._lumen_anim = token

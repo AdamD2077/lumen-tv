@@ -584,8 +584,10 @@ def android_store_items(shell, page):
         if package in have:
             continue
 
-        def work(package=package):
-            path = store.download_android_store(package)
+        def work(report, package=package):
+            path = store.download_android_store(
+                package, report=lambda fraction, _t=None: report(fraction, "Downloading"))
+            report(None, "Installing in Android…")
             return catalog.android_helper("install", str(path))
 
         def done(result, name=name):
@@ -601,8 +603,8 @@ def android_store_items(shell, page):
 
         items.append(Item(f"Install {name}", about, "android",
                           action=lambda w=work, d=done, n=name: shell.busy(
-                              f"Installing {n}…", w, d,
-                              hint="Downloading from f-droid.org")))
+                              f"Installing {n}…", w, d, progress=True,
+                              hint="Connecting to f-droid.org…")))
     return items
 
 
@@ -682,10 +684,10 @@ def store_app_page(shell, app):
             page.refresh()
 
         def install():
-            shell.busy(f"Installing {app['name']}…", lambda: store.install(app["id"]),
+            shell.busy(f"Installing {app['name']}…",
+                       lambda report: store.install(app["id"], report),
                        lambda r: finish(r, "installed. It is on the home screen."),
-                       hint="The first app also downloads shared parts, which can take "
-                            "several minutes.")
+                       hint="Preparing…", progress=True)
 
         def remove():
             shell.busy(f"Removing {app['name']}…", lambda: store.uninstall(app["id"]),

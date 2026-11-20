@@ -493,21 +493,81 @@ class StoreTest(unittest.TestCase):
 
         def request(url, body=None, timeout=20):
             asked.append(url)
-            if url.endswith("/packages/org.fdroid.fdroid"):
-                return b'{"packageName":"org.fdroid.fdroid","suggestedVersionCode":2000053}'
-            return b"PK\x03\x04 pretend apk"
+            return b'{"packageName":"org.fdroid.fdroid","suggestedVersionCode":2000053}'
 
-        path = self.store.download_android_store("org.fdroid.fdroid", folder, request)
+        def fetch(content):
+            def run(url, target, report=None):
+                asked.append(url)
+                Path(target).parent.mkdir(parents=True, exist_ok=True)
+                Path(target).write_bytes(content)
+                return Path(target)
+            return run
+
+        apk = fetch(b"PK\x03\x04 pretend apk")
+        path = self.store.download_android_store("org.fdroid.fdroid", folder, request, apk)
         self.assertEqual(path, folder / "org.fdroid.fdroid.apk")
         self.assertEqual(asked[1], "https://f-droid.org/repo/org.fdroid.fdroid_2000053.apk")
         with self.assertRaises(OSError):
-            self.store.download_android_store("com.evil.app", folder, request)
+            self.store.download_android_store("com.evil.app", folder, request, apk)
         with self.assertRaises(OSError):                 # an error page instead of an APK
-            self.store.download_android_store(
-                "com.aurora.store", folder,
-                lambda url, body=None, timeout=20: b'{"suggestedVersionCode": 76}'
-                if "api" in url else b"<html>Not found</html>")
+            self.store.download_android_store("com.aurora.store", folder, request,
+                                              fetch(b"<html>Not found</html>"))
         self.assertFalse((folder / "com.aurora.store.apk").exists())
+
+    def test_download_reports_progress_and_leaves_nothing_behind_on_failure(self):
+        import http.server
+        import threading
+        payload = b"x" * (700 * 1024)
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                if self.path == "/file":
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                else:
+                    self.send_error(404)
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        folder = Path(tempfile.mkdtemp())
+        seen = []
+        path = self.store.download(base + "/file", folder / "a.bin",
+                                   lambda fraction, text=None: seen.append(fraction))
+        self.assertEqual(path.read_bytes(), payload)
+        self.assertEqual(seen[-1], 1.0)
+        self.assertGreaterEqual(len(seen), 2)
+        self.assertEqual(seen, sorted(seen))
+        with self.assertRaises(OSError):
+            self.store.download(base + "/missing", folder / "b.bin")
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["a.bin"])
+
+    def test_flatpak_progress_is_followed_across_output_chunks(self):
+        progress = self.store.flatpak_progress
+        state, fraction = progress("Looking for matches…\n")
+        self.assertIsNone(fraction)
+        # What flatpak really prints: redraws with escape codes, split anywhere.
+        state, fraction = progress(
+            "Installing 1/4…\x1b[K\r  0%  0 bytes/s\x1b]9;4;1;0\x1b\\\r 37%\x1b]9;4;1;37\x1b\\", state)
+        self.assertAlmostEqual(fraction, 0.37 / 4)
+        state, fraction = progress("\r100%  913.7 kB/s", state)
+        self.assertAlmostEqual(fraction, 0.25)
+        state, fraction = progress("\nInstalling 2/4…", state)
+        self.assertAlmostEqual(fraction, 0.25)             # new part starts at its 0%
+        state, fraction = progress("\r 50%\nInstalling 4/4…\r100%", state)
+        self.assertAlmostEqual(fraction, 1.0)
+        self.assertIsNone(progress("999%")[1])              # a percentage with no part
+        # A single download is not numbered.
+        state, fraction = progress("Installing… | |   0%  0 bytes/s\x1b]9;4;1;0\x1b\\\rInstalling… |▍|  42%")
+        self.assertAlmostEqual(fraction, 0.42)
+        self.assertEqual(self.store.ESCAPES.sub("", "a\x1b]9;4;1;37\x1b\\b\x1b[Kc"), "abc")
 
 
 class ConfigTest(unittest.TestCase):

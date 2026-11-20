@@ -1,24 +1,12 @@
 """On-screen keyboard window (GTK4 layer-shell overlay) and its controller."""
 
-# gtk4-layer-shell has to be loaded before libwayland-client, i.e. before GTK.
-from ctypes import CDLL
+from .layershell import LayerShell      # must come before GTK is imported
 
-try:
-    CDLL("libgtk4-layer-shell.so.0")
-except OSError:
-    pass
-
-import gi
+import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gtk  # noqa: E402
-
-try:
-    gi.require_version("Gtk4LayerShell", "1.0")
-    from gi.repository import Gtk4LayerShell as LayerShell
-except (ValueError, ImportError):
-    LayerShell = None  # development outside the TV session: a plain window
 
 from .config import PKG_DATA  # noqa: E402
 from .osk import COLS, OskModel  # noqa: E402

@@ -3,7 +3,8 @@
    Performance: this runs on a Raspberry Pi GPU. Blurred shadows (box-shadow
    or text-shadow with a blur radius) and full-screen cross-fades are redrawn
    on every frame of every animation and are what makes navigation stutter,
-   so none are used. Focus is shown with scale and a solid outline instead. */
+   so none are used. Motion comes from transforms and opacity, which the GPU
+   handles cheaply: scaling, sliding and fading. */
 
 window {
   background-color: #090c11;
@@ -15,6 +16,7 @@ window {
 button, entry, scrolledwindow { all: unset; }
 
 .root { background-color: #090c11; }
+.glow { transition: background-image 260ms ease-out; }
 
 /* --- top bar --- */
 .tab {
@@ -34,6 +36,10 @@ button, entry, scrolledwindow { all: unset; }
 
 /* --- home hero --- */
 .hero { padding-bottom: 26px; }
+.hero-in-0 { animation: hero-a 240ms ease-out; }
+.hero-in-1 { animation: hero-b 240ms ease-out; }
+@keyframes hero-a { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; } }
+@keyframes hero-b { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; } }
 .hero-kind {
   font-size: 15px; font-weight: 700; letter-spacing: 3px;
   color: rgba(255, 255, 255, 0.6);
@@ -50,12 +56,14 @@ button, entry, scrolledwindow { all: unset; }
   background-color: #1f2530;
   outline: 4px solid rgba(255, 255, 255, 0);
   outline-offset: 4px;
-  transition: transform 110ms ease-out, outline-color 110ms ease-out;
+  /* A slight overshoot makes the focused tile "pop" towards you. */
+  transition: transform 200ms cubic-bezier(0.2, 1.5, 0.4, 1), outline-color 140ms ease-out;
 }
 .card.focused .face {
-  transform: scale(1.08);
+  transform: scale(1.09);
   outline-color: #ffffff;
 }
+.card.pressed .face { transform: scale(1.0); transition-duration: 90ms; }
 .wordmark { font-weight: 800; letter-spacing: -0.5px; }
 .wm-l { font-size: 40px; }
 .wm-m { font-size: 32px; }
@@ -77,12 +85,13 @@ button, entry, scrolledwindow { all: unset; }
   min-height: 44px;
   border-radius: 18px;
   background-color: rgba(255, 255, 255, 0.055);
-  transition: background-color 90ms ease-out;
+  transition: background-color 150ms ease-out, transform 180ms cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 .row-label { font-size: 24px; font-weight: 600; }
 .row-sub { font-size: 18px; color: rgba(255, 255, 255, 0.58); }
 .row-value { font-size: 21px; color: rgba(255, 255, 255, 0.72); }
-.row.focused { background-color: #f3f5f8; color: #0b0e13; }
+.row.focused { background-color: #f3f5f8; color: #0b0e13; transform: scale(1.018); }
+.row.pressed { transform: scale(0.985); transition-duration: 90ms; }
 .row.focused .row-sub, .row.focused .row-value { color: rgba(11, 14, 19, 0.66); }
 .row.focused image { filter: invert(1); }
 
@@ -108,7 +117,20 @@ entry.prompt placeholder { color: rgba(255, 255, 255, 0.42); }
   color: #0b0e13;
   font-size: 21px; font-weight: 600;
 }
-.busy { background-color: rgba(6, 8, 12, 0.88); }
+.toast { animation: rise 220ms ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; } }
+.busy { background-color: rgba(6, 8, 12, 0.9); animation: fade 180ms ease-out; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.progress { min-height: 10px; border-radius: 5px; background-color: rgba(255, 255, 255, 0.16); }
+.progress-fill { min-height: 10px; border-radius: 5px; background-color: #ffffff; }
+
+/* --- launch screen --- */
+window.splash { background-color: transparent; }
+.splash-backdrop { animation: fade 160ms ease-out; transition: opacity 200ms ease-in; }
+.splash-backdrop.leaving { opacity: 0; }
+.splash-content { animation: zoom-in 320ms cubic-bezier(0.2, 1.3, 0.4, 1); }
+@keyframes zoom-in { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; } }
+.splash-name { font-size: 44px; font-weight: 800; letter-spacing: -0.5px; }
 .busy-label { font-size: 34px; font-weight: 700; }
 .spinner {
   min-width: 46px; min-height: 46px;

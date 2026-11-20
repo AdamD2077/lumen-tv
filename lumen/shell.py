@@ -4,7 +4,9 @@ import sys
 import time
 import urllib.parse
 
-import gi
+from . import layershell  # noqa: F401  (must come before GTK is imported)
+
+import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -12,7 +14,8 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import apps as catalog  # noqa: E402
 from . import config, ctl, settings  # noqa: E402
-from .sway import Sway  # noqa: E402
+from .splash import Splash  # noqa: E402
+from .sway import HOME_WS, Sway, read_message  # noqa: E402
 from .widgets import (GRID_COLS, GAP, SIDE, AppRow, Card, Item, ListPage, ListRow,  # noqa: E402
                       V, animate, icon, label, run_async, scroll_to_center, vscroller)
 
@@ -43,6 +46,7 @@ class HomePage(Gtk.Box):
         self.hero = Gtk.Box(orientation=V, spacing=6, margin_start=SIDE, valign=Gtk.Align.END)
         self.hero.set_size_request(-1, 270)
         self.hero.add_css_class("hero")
+        self.hero_step = 0
         self.hero_kind = label("", "hero-kind")
         self.hero_title = label("", "hero-title")
         self.hero_desc = label("", "hero-desc", wrap=True, max_width_chars=60)
@@ -92,6 +96,12 @@ class HomePage(Gtk.Box):
 
     def item_focused(self, card):
         app = card.app
+        if app.name != self.hero_title.get_label():
+            # Alternate between two identical animations: switching the name
+            # is what makes the text glide in again for every new app.
+            self.hero.remove_css_class(f"hero-in-{self.hero_step}")
+            self.hero_step = 1 - self.hero_step
+            self.hero.add_css_class(f"hero-in-{self.hero_step}")
         self.hero_kind.set_label(app.kind_label.upper())
         self.hero_title.set_label(app.name)
         self.hero_desc.set_label(app.desc)
@@ -237,7 +247,7 @@ class Shell(Gtk.ApplicationWindow):
         root.add_overlay(main)
         main.append(self.build_topbar())
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
-                               transition_duration=100, vexpand=True)
+                               transition_duration=230, vexpand=True)
         main.append(self.stack)
 
         self.toast_label = Gtk.Label(halign=Gtk.Align.CENTER, valign=Gtk.Align.END,
@@ -255,7 +265,13 @@ class Shell(Gtk.ApplicationWindow):
         self.busy_label.add_css_class("busy-label")
         self.busy_hint = Gtk.Label()
         self.busy_hint.add_css_class("row-sub")
-        for widget in (self.spinner, self.busy_label, self.busy_hint):
+        self.busy_bar = Gtk.Box(halign=Gtk.Align.CENTER, visible=False)
+        self.busy_bar.add_css_class("progress")
+        self.busy_bar.set_size_request(self.BAR_WIDTH, -1)
+        self.busy_fill = Gtk.Box(halign=Gtk.Align.START)
+        self.busy_fill.add_css_class("progress-fill")
+        self.busy_bar.append(self.busy_fill)
+        for widget in (self.spinner, self.busy_label, self.busy_bar, self.busy_hint):
             inner.append(widget)
         self.busy_box.append(inner)
         root.add_overlay(self.busy_box)
@@ -288,6 +304,7 @@ class Shell(Gtk.ApplicationWindow):
         self.apply_animations()
         # Look for an update shortly after start-up, without getting in the way.
         GLib.timeout_add_seconds(45, self.check_for_update)
+        self.splash = Splash()
         self.fetching_icons = False
         GLib.timeout_add_seconds(3, self.fetch_icons)
         # The web remote can change the configuration (for example add a web app).
@@ -365,13 +382,45 @@ class Shell(Gtk.ApplicationWindow):
 
         self.toast_timer = GLib.timeout_add(3500, hide)
 
-    def busy(self, text, work, done=None, hint=""):
-        """Block the UI behind a spinner while `work()` runs on a thread."""
+    BAR_WIDTH = 560
+
+    def busy(self, text, work, done=None, hint="", progress=False):
+        """Block the UI behind a spinner while `work()` runs on a thread.
+
+        With `progress`, the work is called as `work(report)` and can call
+        `report(fraction, text)` from its thread to drive a progress bar:
+        a fraction of None means "working, amount unknown"."""
         self.busy_label.set_label(text)
         self.busy_hint.set_label(hint)
+        self.busy_bar.set_visible(False)
         self.busy_box.set_visible(True)
         ticket = object()
         self.busy_cancel = ticket
+
+        def show(fraction, note):
+            if self.busy_cancel is ticket:
+                self.busy_bar.set_visible(fraction is not None)
+                if fraction is not None:
+                    fraction = min(max(fraction, 0.0), 1.0)
+                    self.busy_fill.set_size_request(round(self.BAR_WIDTH * fraction), -1)
+                    percent = f"{round(fraction * 100)}%"
+                    note = f"{note} · {percent}" if note else percent
+                if note:
+                    self.busy_hint.set_label(note)
+            return False
+
+        last = [None]
+
+        def report(fraction, note=None):
+            # Called very often from the worker; only pass on visible changes.
+            key = (None if fraction is None else round(fraction * 100), note)
+            if key != last[0]:
+                last[0] = key
+                GLib.idle_add(show, fraction, note)
+
+        if progress:
+            job = work
+            work = lambda: job(report)  # noqa: E731
 
         def finished(result):
             if self.busy_cancel is ticket:
@@ -429,15 +478,23 @@ class Shell(Gtk.ApplicationWindow):
             return
         for page in self.pages[1:]:
             self.stack.remove(page)
+        names = [t[0] for t in TABS]
+        forward = names.index(name) > names.index(self.tab)
         self.tab = name
         self.pages = [self.tab_pages[name]]
-        self.stack.set_visible_child(self.page)
+        self.show_page(self.page, Gtk.StackTransitionType.SLIDE_LEFT if forward
+                       else Gtk.StackTransitionType.SLIDE_RIGHT)
         self.update_tabs()
+
+    def show_page(self, page, transition):
+        """Switch page with a slide, so it is clear where you went."""
+        self.stack.set_transition_type(transition)
+        self.stack.set_visible_child(page)
 
     def push(self, page):
         self.stack.add_child(page)
         self.pages.append(page)
-        self.stack.set_visible_child(page)
+        self.show_page(page, Gtk.StackTransitionType.SLIDE_LEFT)
         self.focus_row = 0
         self.apply_focus()
 
@@ -449,9 +506,9 @@ class Shell(Gtk.ApplicationWindow):
         if closing:
             page.on_close = None
             closing()
-        self.stack.set_visible_child(self.page)
-        # Remove after the cross-fade so the old page does not vanish abruptly.
-        GLib.timeout_add(250, lambda: self.stack.remove(page) and False)
+        self.show_page(self.page, Gtk.StackTransitionType.SLIDE_RIGHT)
+        # Remove after the slide so the old page does not vanish abruptly.
+        GLib.timeout_add(320, lambda: self.stack.remove(page) and False)
         # Restore the row we came from before anything re-applies focus.
         self.focus_row = self.cols.get((self.page, "row"), 0)
         if hasattr(self.page, "builder"):
@@ -552,6 +609,12 @@ class Shell(Gtk.ApplicationWindow):
                 item.nav_activate()
                 return
 
+    @staticmethod
+    def press(item):
+        """A brief "pushed in" look, so every press is visibly acknowledged."""
+        item.add_css_class("pressed")
+        GLib.timeout_add(140, lambda: item.remove_css_class("pressed") and False)
+
     def on_key_pressed(self, _controller, keyval, _keycode, _state):
         return self.on_key(Gdk.keyval_name(keyval) or "")
 
@@ -573,6 +636,7 @@ class Shell(Gtk.ApplicationWindow):
             self.move(d_row, d_col)
         elif action == "ok":
             if self.focused is not None:
+                self.press(self.focused)
                 self.focused.nav_activate()
         elif action == "menu":
             menu = getattr(self.focused, "nav_menu", None)
@@ -657,9 +721,12 @@ class Shell(Gtk.ApplicationWindow):
                 card.dot.set_visible(card.app.workspace in running
                                      and card.app.kind != "android")
 
+    WINDOW_EVENT = 0x80000003
+
     def watch_sway(self):
-        """Refresh the "running" dots and the Android app list when we come home."""
-        sock = self.sway.subscribe(["workspace"])
+        """Follow sway: hide the launch screen when an app's window appears,
+        and refresh the "running" dots and the app list when we come home."""
+        sock = self.sway.subscribe(["workspace", "window"])
         if sock is None:
             return
         self.sway_events = sock
@@ -667,16 +734,25 @@ class Shell(Gtk.ApplicationWindow):
 
         def on_event(*_):
             nonlocal known
-            from .sway import read_message
             try:
-                read_message(sock)
+                kind, data = read_message(sock)
             except (OSError, ValueError):
                 return False
-            now = [a.id for a in catalog.all_apps(self.cfg)]
-            if now != known:           # e.g. an app was installed inside Android
-                known = now
-                self.reload_apps()
-            else:
+            change = (data or {}).get("change")
+            if kind == self.WINDOW_EVENT:
+                if change == "new":
+                    self.splash.dismiss(350)        # give it a moment to draw
+                if change in ("new", "close"):
+                    self.refresh_running()
+                return True
+            if change == "focus" and ((data.get("current") or {}).get("name") == HOME_WS):
+                self.splash.dismiss()
+                now = [a.id for a in catalog.all_apps(self.cfg)]
+                if now != known:       # e.g. an app was installed inside Android
+                    known = now
+                    self.reload_apps()
+                    return True
+            if change in ("focus", "init", "empty"):
                 self.refresh_running()
             return True
 
@@ -691,23 +767,42 @@ class Shell(Gtk.ApplicationWindow):
             return self.push(settings.files_page(self))
         if app.id == "store":
             return self.push(settings.store_page(self))
+        if app.kind == "android":
+            return self.open_android(app.package, app)
+        if self.launcher.is_running(app):        # already open: just switch to it
+            return self.sway.command(f"workspace {app.workspace}")
         if app.kind == "flatpak":
-            return self.report(self.launcher.launch_flatpak(app))
-        if app.id == "browser":
-            if self.launcher.is_running(app):
-                return self.sway.command(f"workspace {app.workspace}")
-            return self.report(self.launcher.open_url(self.cfg["browser_home"]))
-        if app.kind == "web":
-            return self.report(self.launcher.launch_web(app))
-        self.open_android(app.package)
+            start = lambda: self.launcher.launch_flatpak(app)  # noqa: E731
+        elif app.id == "browser":
+            start = lambda: self.launcher.open_url(self.cfg["browser_home"])  # noqa: E731
+        else:
+            start = lambda: self.launcher.launch_web(app)  # noqa: E731
+        self.launch(app, start)
 
-    def open_android(self, package=None):
+    def launch(self, app, start):
+        """Show the launch screen at once, then start the app off the UI thread
+        (closing a previous browser can take a moment)."""
+        self.splash.show_for(app)
+
+        def started(error):
+            if error:
+                self.splash.dismiss()
+                self.toast(error if isinstance(error, str) else f"Could not open {app.name}")
+            elif not self.sway.available:
+                self.splash.dismiss(900)     # development: no window event will come
+
+        run_async(start, started)
+
+    def open_android(self, package=None, app=None):
         state = catalog.android_state()
         if state != "ready":
             return self.push(settings.android_page(self))
 
         def done(result):
             if getattr(result, "returncode", 1) == 0:
+                if app:
+                    self.splash.show_for(app)
+                    self.splash.dismiss(1600)    # Android's window may already exist
                 self.launcher.show_android(package)
             else:
                 lines = (getattr(result, "stderr", "") or str(result)).strip().splitlines()

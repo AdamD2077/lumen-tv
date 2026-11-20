@@ -115,6 +115,12 @@ pleasant with a controller: use the right stick as a mouse.
 offer to install **F-Droid** (open-source apps) and **Aurora Store** (apps from
 Google Play without a Google account). Both are downloaded from f-droid.org.
 
+**Feedback.** Opening an app shows a launch screen with its icon at once and
+keeps it up until the app's window is ready, instead of a black screen.
+Installs from the Store and of the Android stores show a progress bar with a
+percentage. Pages slide, the focused tile pops forward and every press is
+acknowledged; all of it can be switched off under Settings › Display.
+
 **Display.** Settings › Display › Resolution lists every mode your TV offers.
 A new resolution has to be confirmed within 15 seconds or the previous one
 returns, so a mode your TV cannot show never leaves you with a black screen.
