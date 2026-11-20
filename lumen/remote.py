@@ -178,6 +178,14 @@ DIAGNOSTICS = [
      "for t in nft iptables iptables-legacy iptables-nft dnsmasq; do "
      "printf '%s: ' $t; command -v $t || PATH=$PATH:/usr/sbin command -v $t || echo missing; "
      "done; ip -br addr show waydroid0 2>&1"),
+    # Best effort: these need administrator rights and Android to be running.
+    ("Android: internet",
+     "echo ip_forward=$(cat /proc/sys/net/ipv4/ip_forward); "
+     "ping -c 1 -W 2 192.168.240.112 2>&1 | tail -n 2; "
+     "sudo -n nft list ruleset 2>&1 | grep -i -A 14 lxc | head -n 45; "
+     "timeout 15 sudo -n waydroid shell -- sh -c 'echo dns=$(getprop net.dns1); "
+     "ping -c 1 -W 3 8.8.8.8 2>&1 | tail -n 2; "
+     "ping -c 1 -W 3 play.googleapis.com 2>&1 | tail -n 2; date' 2>&1"),
     ("Android: files", "ls -la /var/lib/waydroid/ 2>&1; ls -la /var/lib/waydroid/images 2>&1; "
                        "ls ~/.local/share/applications 2>&1 | head -n 30"),
     ("Android: an app entry",
