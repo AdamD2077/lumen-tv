@@ -180,6 +180,9 @@ DIAGNOSTICS = [
      "done; ip -br addr show waydroid0 2>&1"),
     ("Android: files", "ls -la /var/lib/waydroid/ 2>&1; ls -la /var/lib/waydroid/images 2>&1; "
                        "ls ~/.local/share/applications 2>&1 | head -n 30"),
+    ("Android: an app entry",
+     "f=$(ls ~/.local/share/applications/waydroid.*.desktop 2>/dev/null | head -n 1); "
+     "[ -n \"$f\" ] && { echo \"$f\"; cat \"$f\"; }"),
     ("Android: configuration", "cat /var/lib/waydroid/waydroid.cfg 2>&1 | head -n 40"),
     ("Android: log", "tail -n 120 /var/lib/waydroid/waydroid.log 2>&1"),
     ("Android: setup log", "tail -n 40 /var/log/lumen-android-setup.log 2>&1"),
