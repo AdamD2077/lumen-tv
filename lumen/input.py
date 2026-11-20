@@ -7,7 +7,8 @@ arrow keys, Enter, Escape and a pointer. It also owns the on-screen keyboard.
   D-pad / left stick   move            A   select        B   back
   right stick          pointer         RT / R3  click    LT  right click
   LB / RB              scroll          Y*  play/pause    X*  keyboard
-  Start                menu            Select / Guide    home (hold: close app)
+  Start                menu (hold: quick settings)
+  Select / Guide       home (hold: close app)
 
   * by position: "north" button opens the keyboard, "west" is play/pause.
 
@@ -28,6 +29,7 @@ REPEAT_RATE = 0.1
 POINTER_SPEED = 1500    # px/s at full deflection
 SCROLL_RATE = 0.07
 LONG_PRESS = 0.7
+QUICK_HOLD = 0.45       # holding Start this long opens quick settings
 
 # Linux input event codes (stable kernel ABI), spelled out so the mapping
 # logic can be tested without python-evdev.
@@ -51,12 +53,14 @@ class Mapper:
     """Turns controller buttons into actions. Pure logic: `out` is the virtual
     keyboard/mouse, `osk` the on-screen keyboard, `system` does home/close."""
 
-    NORMAL = {"a": "KEY_ENTER", "b": "KEY_ESC", "west": "KEY_SPACE", "start": "KEY_COMPOSE"}
+    NORMAL = {"a": "KEY_ENTER", "b": "KEY_ESC", "west": "KEY_SPACE"}
+    MENU = "KEY_COMPOSE"
     NAV_KEYS = {"up": "KEY_UP", "down": "KEY_DOWN", "left": "KEY_LEFT", "right": "KEY_RIGHT"}
 
     def __init__(self, out, osk, system):
         self.out, self.osk, self.system = out, osk, system
         self.held = {}
+        self.fired = set()          # long presses already acted on
         self.next_scroll = 0.0
 
     def nav(self, direction):
@@ -86,6 +90,12 @@ class Mapper:
                     self.system.close_app()
                 else:
                     self.system.home()
+            return
+        if name == "start" and not self.osk.visible:
+            # Short press: menu. Held: quick settings (fired from tick()).
+            if not pressed and since is not None and name not in self.fired:
+                self.out.tap(self.MENU)
+            self.fired.discard(name)
             return
         if not pressed:
             return
@@ -118,16 +128,23 @@ class Mapper:
         elif name == "start":
             self.out.tap("KEY_ENTER")
             self.osk.hide()
+            self.fired.add("start")     # this press is used up: no menu on release
 
     def tick(self, now):
-        """Scroll while LB/RB is held. Returns True while it needs more ticks."""
+        """Handle what depends on time: the Start long press, and scrolling
+        while LB/RB is held. Returns True while it needs more ticks."""
         if self.osk.visible:
             return False
+        waiting = "start" in self.held and "start" not in self.fired
+        if waiting and now - self.held["start"] >= QUICK_HOLD:
+            self.fired.add("start")
+            self.system.quick()
+            waiting = False
         step = ("lb" in self.held) - ("rb" in self.held)
         if step and now >= self.next_scroll:
             self.out.wheel(step)
             self.next_scroll = now + SCROLL_RATE
-        return bool(step)
+        return bool(step) or waiting
 
 
 class PadState:
@@ -249,7 +266,7 @@ class Out:
         from .osk import CHARMAP
         self.e = ecodes
         self.charmap = CHARMAP
-        names = {k for k, _ in CHARMAP.values()} | set(Mapper.NORMAL.values()) | set(
+        names = {k for k, _ in CHARMAP.values()} | set(Mapper.NORMAL.values()) | {Mapper.MENU} | set(
             Mapper.NAV_KEYS.values()) | {"KEY_BACKSPACE", "KEY_LEFTSHIFT", "BTN_LEFT", "BTN_RIGHT"}
         self.key_names = {n for n in names if n.startswith("KEY_")}
         self.ui = UInput(
@@ -311,6 +328,10 @@ class Daemon:
 
     def close_app(self):
         self.sway.close_focused_app()
+
+    def quick(self):
+        from . import ctl
+        ctl.send("quick")
 
     # --- devices ---
 

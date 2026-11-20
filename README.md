@@ -70,6 +70,7 @@ the run. The image's user is `tv` with password `lumen`; SSH is off.
 | A | Select |
 | B | Back |
 | Start | Options for the focused app (favorite, close, remove) |
+| Hold Start | Quick settings side panel (volume, sound output) |
 | Select or Guide | Home. Hold it to close the current app |
 | Right stick | Mouse pointer, for websites and touch-only Android apps |
 | RT or right-stick click / LT | Click / right click |
@@ -114,6 +115,15 @@ pleasant with a controller: use the right stick as a mouse.
 **Android app stores.** With Android set up, Store and Settings › Android
 offer to install **F-Droid** (open-source apps) and **Aurora Store** (apps from
 Google Play without a Google account). Both are downloaded from f-droid.org.
+
+**Quick settings.** Hold **Start** on the controller (or press F9, or use the
+web remote) to slide in a side panel over whatever is on screen: volume and
+mute, sound output, the on-screen keyboard, closing the current app, Settings
+and Power. Left and right change a value; B closes the panel.
+
+**Sound output.** Settings › Sound › Output chooses where sound plays: the TV
+over HDMI, the headphone jack, or a connected Bluetooth speaker. The choice is
+remembered.
 
 **Feedback.** Opening an app shows a launch screen with its icon at once and
 keeps it up until the app's window is ready, instead of a black screen.

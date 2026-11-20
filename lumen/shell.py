@@ -1,5 +1,7 @@
 """lumen-shell: the launcher. A full-screen, D-pad driven home screen."""
 
+import os
+import socket
 import sys
 import time
 import urllib.parse
@@ -14,6 +16,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import apps as catalog  # noqa: E402
 from . import config, ctl, settings  # noqa: E402
+from .quick import QuickPanel  # noqa: E402
 from .splash import Splash  # noqa: E402
 from .sway import HOME_WS, Sway, read_message  # noqa: E402
 from .widgets import (GRID_COLS, GAP, SIDE, AppRow, Card, Item, ListPage, ListRow,  # noqa: E402
@@ -305,6 +308,8 @@ class Shell(Gtk.ApplicationWindow):
         # Look for an update shortly after start-up, without getting in the way.
         GLib.timeout_add_seconds(45, self.check_for_update)
         self.splash = Splash()
+        self.quick = QuickPanel(self)
+        self.listen()
         self.fetching_icons = False
         GLib.timeout_add_seconds(3, self.fetch_icons)
         # The web remote can change the configuration (for example add a web app).
@@ -332,6 +337,9 @@ class Shell(Gtk.ApplicationWindow):
             self.tab_buttons.append(button)
             bar.append(button)
         bar.append(Gtk.Box(hexpand=True))
+        hint = Gtk.Label(label="Hold Start for quick settings")
+        hint.add_css_class("status")
+        bar.append(hint)
         self.net_label = Gtk.Label()
         self.net_label.add_css_class("status")
         bar.append(self.net_label)
@@ -441,6 +449,34 @@ class Shell(Gtk.ApplicationWindow):
 
         run_async(settings.update_status, done)
         return False
+
+    def listen(self):
+        """Accept commands from the controller daemon, key bindings and the
+        web remote (`lumenctl quick`)."""
+        try:
+            os.unlink(ctl.SHELL_SOCKET)
+        except OSError:
+            pass
+        try:
+            self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.server.bind(ctl.SHELL_SOCKET)
+            self.server.listen(4)
+        except OSError:
+            return
+
+        def on_client(*_):
+            try:
+                conn, _ = self.server.accept()
+                with conn:
+                    conn.settimeout(0.3)
+                    command = conn.recv(256).decode(errors="replace").strip()
+            except OSError:
+                return True
+            if command == "quick":
+                self.quick.toggle()
+            return True
+
+        GLib.io_add_watch(self.server.fileno(), GLib.IO_IN, on_client)
 
     def apply_animations(self):
         self.get_settings().set_property("gtk-enable-animations",

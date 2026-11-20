@@ -38,7 +38,7 @@ def root_items(shell):
             Item("Controllers & Bluetooth", "Pair a gamepad, remote or speaker", "bluetooth",
                  action=page("Bluetooth", lambda p: bluetooth_items(shell, p), "bluetooth",
                              "Put the controller in pairing mode, then scan.")),
-            Item("Sound", "Volume", "volume",
+            Item("Sound", "Output and volume", "volume",
                  action=page("Sound", lambda p: sound_items(shell, p), "volume")),
             Item("Display", "Resolution", "display",
                  action=page("Display", lambda p: display_items(shell, p), "display")),
@@ -196,23 +196,40 @@ def bluetooth_items(shell, page):
 # --- sound / display / power / about -------------------------------------
 
 def sound_items(shell, page):
-    sink = "@DEFAULT_AUDIO_SINK@"
-    ok, out = run("wpctl", "get-volume", sink, timeout=5)
-    m = re.search(r"([\d.]+)", out)
-    level = f"{round(float(m.group(1)) * 100)}%" if ok and m else "unknown"
-    if "MUTED" in out:
-        level += " (muted)"
+    from . import audio
+    percent, muted = audio.volume()
+    level = "No sound device" if percent is None else "Muted" if muted else f"{percent}%"
+    outputs = audio.outputs()
+    current = next((o["name"] for o in outputs if o["current"]), "None found")
 
-    def do(*args):
-        run("wpctl", *args, timeout=5)
+    def do(action, *args):
+        action(*args)
         page.refresh()
 
+    def choose_output():
+        def build(sub_page):
+            def pick(output):
+                if audio.set_output(output["id"]):
+                    shell.toast(f"Sound now plays through {output['name']}")
+                else:
+                    shell.toast("Could not switch the sound output")
+                shell.pop()
+
+            found = audio.outputs()
+            return [Item(o["name"], icon="volume", value="Selected" if o["current"] else "",
+                         action=lambda o=o: pick(o)) for o in found] or [
+                Item("No sound outputs found", "Check that the TV or speaker is connected")]
+
+        shell.push(ListPage(shell, "Sound output", build, glyph="volume",
+                            subtitle="Where sound plays: the TV over HDMI, the headphone "
+                                     "jack, or a Bluetooth speaker that is connected."))
+
     return [
+        Item("Output", "Where sound plays", "volume", current, action=choose_output),
         Item("Volume up", icon="volume", value=level,
-             action=lambda: do("set-volume", "-l", "1.0", sink, "5%+")),
-        Item("Volume down", icon="volume",
-             action=lambda: do("set-volume", sink, "5%-")),
-        Item("Mute", icon="volume", action=lambda: do("set-mute", sink, "toggle")),
+             action=lambda: do(audio.change_volume, 1)),
+        Item("Volume down", icon="volume", action=lambda: do(audio.change_volume, -1)),
+        Item("Mute", icon="volume", action=lambda: do(audio.toggle_mute)),
     ]
 
 

@@ -254,6 +254,8 @@ class Device:
             ok = self.send("close")
         elif key == "keyboard":
             ok = self.send("osk toggle")
+        elif key == "quick":
+            ok = self.send("quick")
         elif key in KEYS:
             ok = self.send(f"key {KEYS[key]}")
         elif key in VOLUME:

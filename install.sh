@@ -79,6 +79,7 @@ PACKAGES=(
     fonts-inter fonts-noto-color-emoji
     mpv imv                                 # video and photo viewers
     pipewire pipewire-pulse wireplumber     # sound
+    libspa-0.2-bluetooth                    # Bluetooth speakers and headphones
     network-manager bluez                   # Wi-Fi and controllers
     udiskie                                 # USB drives mount themselves
     dbus-user-session v4l-utils curl ca-certificates

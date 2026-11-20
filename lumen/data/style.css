@@ -124,6 +124,22 @@ entry.prompt placeholder { color: rgba(255, 255, 255, 0.42); }
 .progress { min-height: 10px; border-radius: 5px; background-color: rgba(255, 255, 255, 0.16); }
 .progress-fill { min-height: 10px; border-radius: 5px; background-color: #ffffff; }
 
+/* --- quick settings side panel --- */
+window.quick { background-color: transparent; }
+.quick-scrim { background-color: rgba(4, 6, 10, 0.5); animation: fade 160ms ease-out; }
+.quick-panel {
+  padding: 56px 28px 36px 28px;
+  background-color: #10141c;
+  animation: slide-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes slide-in { from { transform: translateX(560px); } to { transform: translateX(0); } }
+.quick-title { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; margin: 0 8px 18px 8px; }
+.quick-hint { font-size: 17px; color: rgba(255, 255, 255, 0.5); margin: 0 8px; }
+.quick-panel .row-value { font-size: 20px; }
+.row.focused .progress { background-color: rgba(11, 14, 19, 0.18); }
+.row.focused .progress-fill { background-color: #0b0e13; }
+.progress.muted .progress-fill { opacity: 0.35; }
+
 /* --- launch screen --- */
 window.splash { background-color: transparent; }
 .splash-backdrop { animation: fade 160ms ease-out; transition: opacity 200ms ease-in; }

@@ -58,6 +58,9 @@ class FakeSystem:
     def close_app(self):
         self.calls.append("close")
 
+    def quick(self):
+        self.calls.append("quick")
+
 
 def make_pad(absinfo=None):
     out, keyboard, system = FakeOut(), FakeOsk(), FakeSystem()
@@ -131,6 +134,30 @@ class ControllerTest(unittest.TestCase):
         state.event(pad.EV_KEY, 0x13a, 0, 2.0)
         self.assertEqual(system.calls, ["home", "close"])
 
+    def test_start_is_menu_when_tapped_and_quick_settings_when_held(self):
+        state, mapper, out, keyboard, system = make_pad()
+        state.event(pad.EV_KEY, 0x13b, 1, 0.0)            # tap
+        self.assertTrue(mapper.tick(0.1))                 # still deciding
+        state.event(pad.EV_KEY, 0x13b, 0, 0.2)
+        self.assertEqual(out.events, [("tap", "KEY_COMPOSE")])
+        self.assertEqual(system.calls, [])
+        self.assertFalse(mapper.tick(0.3))
+
+        state.event(pad.EV_KEY, 0x13b, 1, 1.0)            # hold
+        mapper.tick(1.2)
+        self.assertEqual(system.calls, [])
+        mapper.tick(1.0 + pad.QUICK_HOLD)
+        mapper.tick(1.9)                                  # fires once, not repeatedly
+        self.assertEqual(system.calls, ["quick"])
+        state.event(pad.EV_KEY, 0x13b, 0, 2.0)
+        self.assertEqual(out.events, [("tap", "KEY_COMPOSE")])    # no menu after a hold
+
+        keyboard.visible = True                           # typing: Start is Enter
+        state.event(pad.EV_KEY, 0x13b, 1, 3.0)
+        state.event(pad.EV_KEY, 0x13b, 0, 3.1)
+        self.assertEqual(out.events[1:], [("tap", "KEY_ENTER")])
+        self.assertFalse(keyboard.visible)
+
     def test_shoulder_buttons_scroll_while_held(self):
         state, mapper, out, _, _ = make_pad()
         state.event(pad.EV_KEY, 0x137, 1, 0.0)            # RB
@@ -174,7 +201,8 @@ class KeyboardTest(unittest.TestCase):
             self.skipTest("python-evdev not installed")
         for key_name, _shift in osk.CHARMAP.values():
             self.assertTrue(hasattr(ecodes, key_name), key_name)
-        for name in list(pad.Mapper.NORMAL.values()) + list(pad.Mapper.NAV_KEYS.values()):
+        for name in [*pad.Mapper.NORMAL.values(), *pad.Mapper.NAV_KEYS.values(),
+                     pad.Mapper.MENU]:
             self.assertTrue(hasattr(ecodes, name), name)
         for code, name in pad.BUTTONS.items():           # our constants match the kernel's
             self.assertIn(code, ecodes.BTN)
@@ -576,6 +604,52 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(self.store.ESCAPES.sub("", "a\x1b]9;4;1;37\x1b\\b\x1b[Kc"), "abc")
 
 
+class AudioTest(unittest.TestCase):
+    STATUS = """PipeWire 'pipewire-0' [1.4.2, tv@lumen, cookie:1]
+ └─ Clients:
+        33. WirePlumber [1.4.2, tv@lumen, pid:800]
+
+Audio
+ ├─ Devices:
+ │      49. Built-in Audio                      [alsa]
+ │
+ ├─ Sinks:
+ │      40. Built-in Audio Digital Stereo (HDMI) [vol: 0.40]
+ │  *   47. Built-in Audio Digital Stereo (HDMI) [vol: 0.65 MUTED]
+ │      58. JBL Flip 5                          [vol: 1.00]
+ │
+ ├─ Sources:
+ │  *   46. USB Microphone Analog Stereo        [vol: 1.00 MUTED]
+ │
+ └─ Streams:
+        79. Chromium
+             76. output_FL       > Built-in Audio:playback_FL\t[active]
+
+Video
+ ├─ Sinks:
+ │      90. Not audio at all                    [vol: 1.00]
+"""
+
+    def setUp(self):
+        from lumen import audio
+        self.audio = audio
+
+    def test_outputs_are_the_audio_sinks_only(self):
+        found = self.audio.parse_outputs(self.STATUS)
+        self.assertEqual([(o["id"], o["name"], o["current"], o["volume"], o["muted"])
+                          for o in found],
+                         [(40, "Built-in Audio (HDMI)", False, 40, False),
+                          (47, "Built-in Audio (HDMI) #2", True, 65, True),
+                          (58, "JBL Flip 5", False, 100, False)])
+        self.assertEqual(self.audio.parse_outputs(""), [])
+        self.assertEqual(self.audio.parse_outputs("Audio\n ├─ Sinks:\n │\n"), [])
+
+    def test_volume(self):
+        self.assertEqual(self.audio.parse_volume("Volume: 0.45\n"), (45, False))
+        self.assertEqual(self.audio.parse_volume("Volume: 1.00 [MUTED]\n"), (100, True))
+        self.assertEqual(self.audio.parse_volume("no default sink"), (None, False))
+
+
 class ConfigTest(unittest.TestCase):
     def test_saved_values_override_defaults_and_missing_ones_are_filled(self):
         path = Path(tempfile.mkdtemp()) / "sub" / "config.json"
@@ -725,10 +799,10 @@ class RemoteApiTest(unittest.TestCase):
 
     def test_remote_keys_and_text(self):
         self.pair()
-        for key in ("up", "ok", "back", "home", "keyboard"):
+        for key in ("up", "ok", "back", "home", "keyboard", "quick", "menu"):
             self.assertEqual(self.call("POST", "/api/key", {"key": key})[0].status, 200)
         self.assertEqual(self.sent, ["key KEY_UP", "key KEY_ENTER", "key KEY_ESC", "home",
-                                     "osk toggle"])
+                                     "osk toggle", "quick", "key KEY_COMPOSE"])
         self.assertEqual(self.call("POST", "/api/key", {"key": "KEY_POWER"})[0].status, 400)
         self.call("POST", "/api/text", {"text": "hello\nworld"})
         self.assertEqual(self.sent[-1], "text hello world")       # one line, no injection
