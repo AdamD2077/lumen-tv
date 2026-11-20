@@ -247,6 +247,8 @@ class Device:
                 error = None
             else:
                 error = self.launcher.open_url(self.cfg()["browser_home"])
+        elif app.kind == "flatpak":
+            error = self.launcher.launch_flatpak(app)
         elif app.kind == "android":
             if catalog.android_state() != "ready":
                 raise ApiError("Android is not set up on the TV yet")

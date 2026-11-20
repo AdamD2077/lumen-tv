@@ -12,7 +12,7 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config
+from . import config, icons
 from .sway import HOME_WS, Sway
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg", ".avif", ".heic"}
@@ -24,7 +24,7 @@ MEDIA_EXT = {".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".ts", ".mpg", ".m
 class App:
     id: str
     name: str
-    kind: str                 # "web" | "android" | "system"
+    kind: str                 # "web" | "android" | "flatpak" | "system"
     color: str = "#3b82f6"
     desc: str = ""
     url: str = ""
@@ -40,7 +40,8 @@ class App:
 
     @property
     def kind_label(self):
-        return {"web": "Web app", "android": "Android app", "system": "Lumen TV"}[self.kind]
+        return {"web": "Web app", "android": "Android app", "flatpak": "App",
+                "system": "Lumen TV"}[self.kind]
 
     @property
     def workspace(self):
@@ -115,11 +116,15 @@ def web_apps(cfg):
         if not w.get("id") or not w.get("url"):
             continue
         host = re.sub(r"^[a-z]+://(www\.)?", "", w["url"]).split("/")[0]
-        apps.append(App(
+        app = App(
             id=w["id"], name=w.get("name", w["id"]), kind="web", url=w["url"],
-            color=w.get("color") or color_for(w["id"]),
             desc=w.get("desc") or host,
-            user_agent=w.get("user_agent", ""), zoom=w.get("zoom", 0)))
+            user_agent=w.get("user_agent", ""), zoom=w.get("zoom", 0))
+        # The site's own icon, once the launcher has fetched it (see icons.py).
+        icon = icons.icon_path(app.css)
+        app.icon_path = str(icon) if icon.exists() else ""
+        app.color = w.get("color") or icons.tile_color(icon) or color_for(w["id"])
+        apps.append(app)
     return apps
 
 
@@ -129,6 +134,8 @@ def system_apps():
             desc="Browse the web. Move the pointer with the right stick."),
         App("files", "Files", "system", "#d97706", icon="folder",
             desc="Photos, videos and music from this device or a USB drive."),
+        App("store", "Store", "system", "#7c3aed", icon="store",
+            desc="Find and install apps from Flathub, and Android app stores."),
         App("android", "Android", "system", "#16a34a", icon="android",
             desc="Open the Android home screen, install and manage apps."),
         App("settings", "Settings", "system", "#475569", icon="settings",
@@ -155,17 +162,58 @@ def android_apps(dirs=None):
                 continue
             package = path.name[len("waydroid."):-len(".desktop")]
             icon = entry.get("Icon", "")
+            icon = icon if os.path.isfile(icon) else ""
             apps.append(App(
                 id=f"android:{package}", name=entry.get("Name", package), kind="android",
-                package=package, color=color_for(package), desc=package,
-                icon_path=icon if os.path.isfile(icon) else ""))
+                package=package, desc=package, icon_path=icon,
+                color=(icons.tile_color(icon) if icon else None) or color_for(package)))
     apps.sort(key=lambda a: a.name.lower())
     return apps
 
 
+def flatpak_dirs():
+    return [Path.home() / ".local/share/flatpak/exports/share",
+            Path("/var/lib/flatpak/exports/share")]
+
+
+def flatpak_icon(share, name):
+    """Find an exported app icon, preferring large bitmaps."""
+    if os.path.isabs(name):
+        return name if os.path.isfile(name) else ""
+    for size in ("512x512", "256x256", "128x128", "scalable", "96x96", "64x64"):
+        for ext in ("png", "svg"):
+            path = Path(share) / "icons/hicolor" / size / "apps" / f"{name}.{ext}"
+            if path.is_file():
+                return str(path)
+    return ""
+
+
+def flatpak_apps(dirs=None):
+    """Flatpak apps, read from the .desktop entries Flatpak exports."""
+    apps = {}
+    for share in dirs or flatpak_dirs():
+        for path in sorted(Path(share, "applications").glob("*.desktop")):
+            parser = configparser.ConfigParser(interpolation=None, strict=False)
+            try:
+                parser.read(path, encoding="utf-8")
+                entry = parser["Desktop Entry"]
+            except (configparser.Error, KeyError, OSError):
+                continue
+            app_id = entry.get("X-Flatpak", "")
+            if (not app_id or f"flatpak:{app_id}" in apps
+                    or entry.get("NoDisplay", "false").lower() == "true"):
+                continue
+            icon = flatpak_icon(share, entry.get("Icon", app_id))
+            apps[f"flatpak:{app_id}"] = App(
+                id=f"flatpak:{app_id}", name=entry.get("Name", app_id), kind="flatpak",
+                package=app_id, desc=entry.get("Comment", "") or app_id, icon_path=icon,
+                color=(icons.tile_color(icon) if icon else None) or color_for(app_id))
+    return sorted(apps.values(), key=lambda a: a.name.lower())
+
+
 def all_apps(cfg):
     hidden = set(cfg.get("hidden", []))
-    apps = web_apps(cfg) + android_apps() + system_apps()
+    apps = web_apps(cfg) + android_apps() + flatpak_apps() + system_apps()
     return [a for a in apps if a.id not in hidden]
 
 
@@ -284,6 +332,14 @@ class Launcher:
             return f"{cmd[0]} is not installed"
         return self._spawn(cmd, "app-media",
                            env={"imv_config": str(config.ROOT / "config/imv.conf")})
+
+    def launch_flatpak(self, app):
+        if self.is_running(app):
+            self.sway.command(f"workspace {app.workspace}")
+            return None
+        if not shutil.which("flatpak"):
+            return "Flatpak is not installed"
+        return self._spawn(["flatpak", "run", app.package], app.workspace)
 
     def show_android(self, package=None):
         """Bring Android to the front. Call once `lumen-android ensure` succeeded."""

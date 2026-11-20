@@ -83,6 +83,7 @@ PACKAGES=(
     udiskie                                 # USB drives mount themselves
     dbus-user-session v4l-utils curl ca-certificates
     git                                     # in-system updates
+    flatpak xwayland                        # app store; X11 for apps that need it
 )
 # The browser's package name differs between Raspberry Pi OS releases.
 if apt-cache show chromium >/dev/null 2>&1; then

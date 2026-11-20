@@ -24,6 +24,7 @@ custom shell on top:
 | Windows | [sway](https://swaywm.org), used only as invisible plumbing |
 | Android apps | [Waydroid](https://waydro.id), an Android container with direct GPU access |
 | Web apps and browser | Chromium in kiosk mode |
+| Linux apps and the Store | [Flatpak](https://flatpak.org) with [Flathub](https://flathub.org) |
 | Remote access from a phone or PC | `lumen-remote`, a small web server written for this project |
 | Video, music, photos | mpv and imv |
 
@@ -101,7 +102,25 @@ standard tablet one, put its `system.img` and `vendor.img` in
 
 **Web apps.** Any website can be a full-screen app: Settings › Web apps › Add
 a web app. YouTube is preconfigured to load its TV interface, which is fully
-controller-driven.
+controller-driven. Each web app's tile shows the site's own icon, downloaded
+from the site the first time and cached (nothing is bundled).
+
+**Store.** The Store tile lists Linux apps from Flathub, filtered to those
+built for the Pi's processor. Search, install and remove with the controller;
+installed apps appear on the home screen. Apps are installed for the TV user
+only, so no administrator rights are involved. Not every desktop app is
+pleasant with a controller: use the right stick as a mouse.
+
+**Android app stores.** With Android set up, Store and Settings › Android
+offer to install **F-Droid** (open-source apps) and **Aurora Store** (apps from
+Google Play without a Google account). Both are downloaded from f-droid.org.
+
+**Display.** Settings › Display › Resolution lists every mode your TV offers.
+A new resolution has to be confirmed within 15 seconds or the previous one
+returns, so a mode your TV cannot show never leaves you with a black screen.
+"Automatic" stays at 1080p, which is the smoothest on a Pi. If moving around
+still feels slow, turn off Animations on the same page, and check
+Settings › About › Graphics: it should say GPU, not Software.
 
 **Files.** USB drives mount themselves and appear under Files. Photos open in
 a full-screen viewer (left/right to browse), videos and music in mpv.
@@ -163,13 +182,14 @@ Verified:
   requests, the remote keys, typing, and web app management, against the real
   server. The web page itself has **not** been viewed in a browser yet.
 - `python3 -m unittest discover tests` covers the controller mapping, keyboard
-  layout, sway protocol, app catalogue, settings parsing, remote access and the updater.
+  layout, sway protocol, app catalogue, settings parsing, resolutions, icons, the store, remote access and the updater.
 
 Not yet verified, because they need the real hardware:
 
 - `install.sh`, the boot-to-TV session and the sway configuration
 - A full in-system update on a device (it re-runs `install.sh` as root)
 - Waydroid on the Pi (GPU acceleration, start-up time, app compatibility)
+- Installing and running Flatpak apps, and installing the Android stores
 - Chromium kiosk behaviour and whether the streaming sites accept it (DRM
   services need Widevine, which the installer adds only if the OS provides it)
 - The on-screen keyboard as an overlay above other apps

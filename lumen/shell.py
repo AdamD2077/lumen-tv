@@ -59,6 +59,7 @@ class HomePage(Gtk.Box):
         favorites = [by_id[i] for i in shell.cfg["favorites"] if i in by_id]
         groups = [
             ("Favorites", favorites),
+            ("Apps", [a for a in shell.apps if a.kind == "flatpak"]),
             ("Android apps", [a for a in shell.apps if a.kind == "android"]),
             ("Web apps", [a for a in shell.apps if a.kind == "web"]),
             ("This device", [a for a in shell.apps if a.kind == "system"]),
@@ -151,6 +152,7 @@ class AppsPage(GridPage):
     def build(self):
         apps = self.shell.apps
         self.fill([
+            ("Apps", [a for a in apps if a.kind == "flatpak"]),
             ("Android apps", [a for a in apps if a.kind == "android"]),
             ("Web apps", [a for a in apps if a.kind == "web"]),
             ("This device", [a for a in apps if a.kind == "system"]),
@@ -235,7 +237,7 @@ class Shell(Gtk.ApplicationWindow):
         root.add_overlay(main)
         main.append(self.build_topbar())
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
-                               transition_duration=160, vexpand=True)
+                               transition_duration=100, vexpand=True)
         main.append(self.stack)
 
         self.toast_label = Gtk.Label(halign=Gtk.Align.CENTER, valign=Gtk.Align.END,
@@ -282,9 +284,12 @@ class Shell(Gtk.ApplicationWindow):
         GLib.timeout_add_seconds(30, self.update_network)
         self.watch_sway()
         self.connect("map", lambda _w: GLib.idle_add(self.apply_focus))
-        self.sway.setup_outputs(self.cfg["prefer_1080p"])
+        self.sway.setup_outputs(self.cfg["display_mode"])
+        self.apply_animations()
         # Look for an update shortly after start-up, without getting in the way.
         GLib.timeout_add_seconds(45, self.check_for_update)
+        self.fetching_icons = False
+        GLib.timeout_add_seconds(3, self.fetch_icons)
         # The web remote can change the configuration (for example add a web app).
         self.config_mtime = self.config_stamp()
         GLib.timeout_add_seconds(2, self.watch_config)
@@ -386,6 +391,20 @@ class Shell(Gtk.ApplicationWindow):
         run_async(settings.update_status, done)
         return False
 
+    def apply_animations(self):
+        self.get_settings().set_property("gtk-enable-animations",
+                                         bool(self.cfg["animations"]))
+
+    def graphics(self):
+        """How the launcher is being drawn: worth knowing when it feels slow."""
+        renderer = self.get_renderer()
+        name = type(renderer).__name__ if renderer else ""
+        if "Cairo" in name:
+            return "Software (slow)"
+        if "Vulkan" in name:
+            return "GPU (Vulkan)"
+        return "GPU (OpenGL)" if name else "Unknown"
+
     def set_update_ready(self, ready):
         """Mark the Settings tab while an update is waiting to be installed."""
         tab = next(b for b in self.tab_buttons if b.tab == "settings")
@@ -426,6 +445,10 @@ class Shell(Gtk.ApplicationWindow):
         if len(self.pages) < 2:
             return
         page = self.pages.pop()
+        closing = getattr(page, "on_close", None)
+        if closing:
+            page.on_close = None
+            closing()
         self.stack.set_visible_child(self.page)
         # Remove after the cross-fade so the old page does not vanish abruptly.
         GLib.timeout_add(250, lambda: self.stack.remove(page) and False)
@@ -573,12 +596,42 @@ class Shell(Gtk.ApplicationWindow):
         self.tab_pages["apps"].build()
         self.tab_pages["search"].build()
         self.refresh_running()
+        self.fetch_icons()          # a newly added web app may need its icon
         self.focused = None
         self.apply_focus()
 
     def save(self):
         config.save(self.cfg)
         self.reload_apps()
+
+    def fetch_icons(self):
+        """Download the icons of web apps that do not have one yet (in the
+        background), then redraw the tiles."""
+        from . import icons
+        wanted = [a for a in self.apps if a.kind == "web" and not a.icon_path
+                  and icons.missing(a.css)]
+        if not wanted or self.fetching_icons:
+            return False
+        self.fetching_icons = True
+
+        def fetch(app):
+            if icons.fetch_icon(app.css, app.url):
+                return 1
+            icons.mark_failed(app.css)          # do not ask the site again for a week
+            return 0
+
+        def work():
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(4) as pool:
+                return sum(pool.map(fetch, wanted))
+
+        def done(got):
+            self.fetching_icons = False
+            if isinstance(got, int) and got:
+                self.reload_apps()
+
+        run_async(work, done)
+        return False
 
     @staticmethod
     def config_stamp():
@@ -636,6 +689,10 @@ class Shell(Gtk.ApplicationWindow):
             return self.apply_focus()
         if app.id == "files":
             return self.push(settings.files_page(self))
+        if app.id == "store":
+            return self.push(settings.store_page(self))
+        if app.kind == "flatpak":
+            return self.report(self.launcher.launch_flatpak(app))
         if app.id == "browser":
             if self.launcher.is_running(app):
                 return self.sway.command(f"workspace {app.workspace}")

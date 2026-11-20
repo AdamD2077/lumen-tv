@@ -30,7 +30,7 @@ def label(text, css, **props):
     return widget
 
 
-def animate(widget, adj, target, ms=220):
+def animate(widget, adj, target, ms=150):
     """Ease a scroll adjustment to `target` (clamped once layout is known)."""
     token = object()
     adj._lumen_anim = token
@@ -88,8 +88,16 @@ class Card(Gtk.Box):
 
         overlay = Gtk.Overlay()
         if app.icon_path:
-            art = Gtk.Image.new_from_file(app.icon_path)
-            art.set_pixel_size(84)
+            # The app's real icon, with its name underneath.
+            picture = Gtk.Image.new_from_file(app.icon_path)
+            picture.set_pixel_size(78)
+            frame = Gtk.Box(halign=Gtk.Align.CENTER, css_classes=["app-icon"])
+            frame.set_overflow(Gtk.Overflow.HIDDEN)      # rounds the icon's corners
+            frame.append(picture)
+            art = Gtk.Box(orientation=V, spacing=8, valign=Gtk.Align.CENTER)
+            art.append(frame)
+            art.append(Gtk.Label(label=app.name, css_classes=["tile-name"],
+                                 ellipsize=Pango.EllipsizeMode.END, max_width_chars=20))
         elif app.icon:
             art = Gtk.Box(orientation=V, spacing=10, valign=Gtk.Align.CENTER)
             art.append(icon(app.icon, 52))
@@ -105,12 +113,6 @@ class Card(Gtk.Box):
         face.set_child(overlay)
         self.append(face)
 
-        if app.icon_path:
-            # Icon-only tiles get their name underneath while focused.
-            name = Gtk.Label(label=app.name, xalign=0, ellipsize=Pango.EllipsizeMode.END,
-                             max_width_chars=22)
-            name.add_css_class("card-name")
-            self.append(name)
 
 
 class AppRow(Gtk.Box):

@@ -1,4 +1,9 @@
-/* Lumen TV launcher. Sizes assume a 1920x1080 canvas viewed from the sofa. */
+/* Lumen TV launcher. Sizes assume a 1920x1080 canvas viewed from the sofa.
+
+   Performance: this runs on a Raspberry Pi GPU. Blurred shadows (box-shadow
+   or text-shadow with a blur radius) and full-screen cross-fades are redrawn
+   on every frame of every animation and are what makes navigation stutter,
+   so none are used. Focus is shown with scale and a solid outline instead. */
 
 window {
   background-color: #090c11;
@@ -10,7 +15,6 @@ window {
 button, entry, scrolledwindow { all: unset; }
 
 .root { background-color: #090c11; }
-.glow { transition: background-image 450ms ease; }
 
 /* --- top bar --- */
 .tab {
@@ -44,29 +48,23 @@ button, entry, scrolledwindow { all: unset; }
 .face {
   border-radius: 16px;
   background-color: #1f2530;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   outline: 4px solid rgba(255, 255, 255, 0);
   outline-offset: 4px;
-  transition: transform 160ms ease, outline-color 160ms ease, box-shadow 160ms ease;
+  transition: transform 110ms ease-out, outline-color 110ms ease-out;
 }
 .card.focused .face {
   transform: scale(1.08);
   outline-color: #ffffff;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
 }
-.wordmark { font-weight: 800; letter-spacing: -0.5px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); }
+.wordmark { font-weight: 800; letter-spacing: -0.5px; }
 .wm-l { font-size: 40px; }
 .wm-m { font-size: 32px; }
 .wm-s { font-size: 25px; }
-.tile-name { font-size: 20px; font-weight: 700; }
-.card-name {
-  font-size: 19px; font-weight: 600; margin-left: 2px;
-  opacity: 0; transition: opacity 160ms ease;
-}
-.card.focused .card-name { opacity: 1; }
+.tile-name { font-size: 20px; font-weight: 700; margin: 0 14px; }
+.app-icon { border-radius: 18px; }
 .dot {
   min-width: 12px; min-height: 12px; border-radius: 6px; margin: 12px;
-  background-color: #ffffff; box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25);
+  background-color: #ffffff; border: 3px solid rgba(0, 0, 0, 0.25);
 }
 
 /* --- list pages (settings, files, menus) --- */
@@ -79,12 +77,12 @@ button, entry, scrolledwindow { all: unset; }
   min-height: 44px;
   border-radius: 18px;
   background-color: rgba(255, 255, 255, 0.055);
-  transition: background-color 120ms ease, transform 120ms ease;
+  transition: background-color 90ms ease-out;
 }
 .row-label { font-size: 24px; font-weight: 600; }
 .row-sub { font-size: 18px; color: rgba(255, 255, 255, 0.58); }
 .row-value { font-size: 21px; color: rgba(255, 255, 255, 0.72); }
-.row.focused { background-color: #f3f5f8; color: #0b0e13; transform: scale(1.015); }
+.row.focused { background-color: #f3f5f8; color: #0b0e13; }
 .row.focused .row-sub, .row.focused .row-value { color: rgba(11, 14, 19, 0.66); }
 .row.focused image { filter: invert(1); }
 
@@ -109,7 +107,6 @@ entry.prompt placeholder { color: rgba(255, 255, 255, 0.42); }
   background-color: #f3f5f8;
   color: #0b0e13;
   font-size: 21px; font-weight: 600;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 .busy { background-color: rgba(6, 8, 12, 0.88); }
 .busy-label { font-size: 34px; font-weight: 700; }

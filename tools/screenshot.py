@@ -21,7 +21,9 @@ gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import GLib, Graphene, Gsk, Gtk  # noqa: E402
 
-from lumen import osk_view, shell  # noqa: E402
+from lumen import apps, osk_view, shell  # noqa: E402
+
+apps.flatpak_dirs = lambda: []      # only the default apps, not this computer's own
 
 # (file name, GDK key names to press before taking the shot)
 SHOTS = [
@@ -62,7 +64,12 @@ def shoot(app, out_dir):
     win = shell.Shell(app)
     win.get_child().set_size_request(1920, 1080)
     win.present()
-    pump(900)
+    pump(3500)                       # let it start fetching web app icons...
+    for _ in range(60):              # ...and finish
+        if not win.fetching_icons:
+            break
+        pump(500)
+    pump(600)
     for name, keys in SHOTS:
         for key in keys.split():
             win.on_key(key)

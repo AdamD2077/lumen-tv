@@ -235,23 +235,64 @@ class SwayTest(unittest.TestCase):
         self.assertFalse(offline.command("workspace home"))
         self.assertEqual(offline.workspace_names(), set())
 
-    def test_4k_tv_is_driven_at_1080p(self):
-        out = {"name": "HDMI-A-1", "active": True,
-               "current_mode": {"width": 3840, "height": 2160, "refresh": 60000},
-               "modes": [{"width": 3840, "height": 2160, "refresh": 60000},
-                         {"width": 1920, "height": 1080, "refresh": 120000},
-                         {"width": 1920, "height": 1080, "refresh": 60000},
-                         {"width": 1920, "height": 1080, "refresh": 50000}]}
-        self.assertEqual(sway.output_command(out),
+    TV_4K = {"name": "HDMI-A-1", "active": True,
+             "current_mode": {"width": 3840, "height": 2160, "refresh": 60000},
+             "modes": [{"width": 3840, "height": 2160, "refresh": 60000},
+                       {"width": 3840, "height": 2160, "refresh": 30000},
+                       {"width": 2560, "height": 1440, "refresh": 59951},
+                       {"width": 1920, "height": 1080, "refresh": 120000},
+                       {"width": 1920, "height": 1080, "refresh": 60000},
+                       {"width": 1920, "height": 1080, "refresh": 59940},
+                       {"width": 1920, "height": 1080, "refresh": 50000},
+                       {"width": 1280, "height": 720, "refresh": 60000},
+                       {"width": 640, "height": 480, "refresh": 60000}]}
+
+    def test_4k_tv_is_driven_at_1080p_by_default(self):
+        self.assertEqual(sway.output_command(self.TV_4K),
                          "output HDMI-A-1 mode 1920x1080@60.000Hz scale 1")
-        self.assertEqual(sway.output_command(out, prefer_1080p=False),
-                         "output HDMI-A-1 scale 2")
+        self.assertEqual(sway.output_command(self.TV_4K, "auto"),
+                         sway.output_command(self.TV_4K))
+
+    def test_native_and_explicit_resolutions(self):
+        tv = self.TV_4K
+        # Already in the wanted mode: only the scale is set.
+        self.assertEqual(sway.output_command(tv, "native"), "output HDMI-A-1 scale 2")
+        self.assertEqual(sway.output_command(tv, "2560x1440@59951"),
+                         "output HDMI-A-1 mode 2560x1440@59.951Hz scale 1.333")
+        self.assertEqual(sway.output_command(tv, "1920x1080@120000"),
+                         "output HDMI-A-1 mode 1920x1080@120.000Hz scale 1")
+        self.assertEqual(sway.output_command(tv, "1280x720@60000"),
+                         "output HDMI-A-1 mode 1280x720@60.000Hz scale 0.667")
+        # A mode this TV does not have (settings carried over from another TV).
+        self.assertEqual(sway.output_command(tv, "1600x900@60000"),
+                         sway.output_command(tv, "auto"))
+        # "native" after "auto" has switched the TV to 1080p goes back up.
+        at_1080 = {**tv, "current_mode": {"width": 1920, "height": 1080, "refresh": 60000}}
+        self.assertEqual(sway.output_command(at_1080, "native"),
+                         "output HDMI-A-1 mode 3840x2160@60.000Hz scale 2")
+        self.assertEqual(sway.output_command(at_1080, "auto"), "output HDMI-A-1 scale 1")
+
+    def test_offered_modes_are_deduplicated_and_tv_sized(self):
+        labels = [sway.mode_label(m) for m in sway.available_modes(self.TV_4K)]
+        self.assertEqual(labels, [
+            "3840 × 2160 · 60 Hz", "3840 × 2160 · 30 Hz", "2560 × 1440 · 60 Hz",
+            "1920 × 1080 · 120 Hz", "1920 × 1080 · 60 Hz", "1920 × 1080 · 50 Hz",
+            "1280 × 720 · 60 Hz"])
+        for mode in sway.available_modes(self.TV_4K):        # every offer can be applied
+            self.assertIn("mode " if sway.mode_key(mode) != "3840x2160@60000" else "scale",
+                          sway.output_command(self.TV_4K, sway.mode_key(mode)))
 
     def test_720p_tv_is_scaled_down(self):
         out = {"name": "HDMI-A-1", "active": True, "modes": [],
                "current_mode": {"width": 1280, "height": 720, "refresh": 60000}}
         self.assertEqual(sway.output_command(out), "output HDMI-A-1 scale 0.667")
         self.assertIsNone(sway.output_command({"name": "x", "active": False}))
+
+    def test_small_only_display_keeps_its_best_mode(self):
+        out = {"name": "DSI-1", "active": True,
+               "current_mode": {"width": 2560, "height": 1440, "refresh": 60000},
+               "modes": [{"width": 2560, "height": 1440, "refresh": 60000}]}
+        self.assertEqual(sway.output_command(out), "output DSI-1 scale 1.333")
 
 
 class AppsTest(unittest.TestCase):
@@ -304,18 +345,190 @@ class AppsTest(unittest.TestCase):
         self.assertEqual(apps.darken("#ff8000", 0.5), "#7f4000")
 
 
+class FlatpakAppsTest(unittest.TestCase):
+    def test_apps_come_from_flatpak_exports(self):
+        share = Path(tempfile.mkdtemp())
+        (share / "applications").mkdir()
+        icon_dir = share / "icons/hicolor/128x128/apps"
+        icon_dir.mkdir(parents=True)
+        (icon_dir / "org.videolan.VLC.png").write_bytes(b"not really a png")
+        (share / "applications/org.videolan.VLC.desktop").write_text(
+            "[Desktop Entry]\nName=VLC\nComment=Media player\nIcon=org.videolan.VLC\n"
+            "Exec=flatpak run org.videolan.VLC\nX-Flatpak=org.videolan.VLC\n")
+        (share / "applications/org.videolan.VLC.extra.desktop").write_text(
+            "[Desktop Entry]\nName=VLC (second entry)\nX-Flatpak=org.videolan.VLC\n")
+        (share / "applications/hidden.desktop").write_text(
+            "[Desktop Entry]\nName=Hidden\nNoDisplay=true\nX-Flatpak=org.example.Hidden\n")
+        (share / "applications/plain.desktop").write_text("[Desktop Entry]\nName=Not flatpak\n")
+        found = apps.flatpak_apps([share])
+        self.assertEqual([(a.id, a.name, a.package, a.kind) for a in found],
+                         [("flatpak:org.videolan.VLC", "VLC", "org.videolan.VLC", "flatpak")])
+        self.assertTrue(found[0].icon_path.endswith("128x128/apps/org.videolan.VLC.png"))
+        self.assertEqual(found[0].workspace, "app-flatpak-org-videolan-vlc")
+        self.assertRegex(found[0].color, r"^#[0-9a-f]{6}$")     # unreadable icon: fallback
+
+
+class IconsTest(unittest.TestCase):
+    PAGE = """<html><head>
+      <link rel="shortcut icon" href="/favicon.ico">
+      <link rel="icon" sizes="32x32" href="/i32.png">
+      <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.example/touch.png">
+      <link rel="icon" type="image/svg+xml" href="logo.svg">
+      <link rel="manifest" href="/app.webmanifest">
+      <link rel="stylesheet" href="/style.css">
+      <link rel="icon" href="data:image/png;base64,AAAA">
+    </head></html>"""
+
+    def setUp(self):
+        from lumen import icons
+        self.icons = icons
+        self.dir = Path(tempfile.mkdtemp())
+
+    def png(self, size, color=0x2060c0ff):
+        import gi
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf
+        pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, size, size)
+        pixbuf.fill(color)
+        return bytes(pixbuf.save_to_bufferv("png", [], [])[1])
+
+    def test_candidates_are_ranked_and_resolved(self):
+        found = self.icons.icon_candidates(self.PAGE, "https://example.org/tv/")
+        self.assertEqual([c[0] for c in found], [
+            "https://example.org/tv/logo.svg", "https://example.org/app.webmanifest",
+            "https://cdn.example/touch.png", "https://example.org/favicon.ico",
+            "https://example.org/i32.png", "https://example.org/apple-touch-icon.png"])
+        self.assertTrue(found[1][2])                               # the manifest
+        self.assertEqual(self.icons.icon_candidates("<<<not html", "https://x.org/")[-1][0],
+                         "https://x.org/favicon.ico")
+
+    def test_manifest_icons(self):
+        manifest = json.dumps({"icons": [
+            {"src": "a-192.png", "sizes": "192x192"},
+            {"src": "/b-512.png", "sizes": "512x512", "purpose": "any maskable"},
+            {"src": "mask.png", "sizes": "1024x1024", "purpose": "maskable"},
+            {"nosrc": 1}, "junk"]})
+        self.assertEqual(self.icons.manifest_icons(manifest, "https://x.org/m/app.json"),
+                         [("https://x.org/b-512.png", 512), ("https://x.org/m/a-192.png", 192)])
+        self.assertEqual(self.icons.manifest_icons("not json", "https://x.org/"), [])
+
+    def test_fetch_skips_tiny_and_broken_icons(self):
+        big, tiny = self.png(300), self.png(32)
+        site = {
+            "https://example.org/tv": self.PAGE.encode(),
+            "https://example.org/": b"<html></html>",
+            "https://example.org/logo.svg": b"this is not an image",
+            "https://example.org/app.webmanifest": json.dumps(
+                {"icons": [{"src": "/tiny.png", "sizes": "512x512"}]}).encode(),
+            "https://example.org/tiny.png": tiny,           # lies about its size
+            "https://cdn.example/touch.png": big,
+        }
+        asked = []
+
+        def get(url):
+            asked.append(url)
+            if url not in site:
+                raise OSError("404")
+            return site[url], url
+
+        path = self.icons.fetch_icon("example", "https://example.org/tv", self.dir, get=get)
+        self.assertEqual(path, self.dir / "example.png")
+        import gi
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf
+        _, width, height = GdkPixbuf.Pixbuf.get_file_info(str(path))
+        self.assertEqual((width, height), (self.icons.SAVE_SIZE, self.icons.SAVE_SIZE))
+        self.assertNotIn("https://example.org/i32.png", asked)     # stopped once it had one
+        self.assertEqual(self.icons.tile_color(path), self.icons.tile_color(path))
+        self.assertRegex(self.icons.tile_color(path), r"^#[0-9a-f]{6}$")
+
+    def test_unreachable_site_gives_no_icon_and_is_not_retried_at_once(self):
+        def get(url):
+            raise OSError("offline")
+
+        self.assertIsNone(self.icons.fetch_icon("gone", "https://gone.invalid", self.dir, get=get))
+        self.assertTrue(self.icons.missing("gone", self.dir))
+        self.icons.mark_failed("gone", self.dir)
+        self.assertFalse(self.icons.missing("gone", self.dir))
+        later = __import__("time").time() + self.icons.RETRY_AFTER + 60
+        self.assertTrue(self.icons.missing("gone", self.dir, now=later))
+        with self.assertRaises(ValueError):
+            self.icons._get("file:///etc/passwd")
+        self.assertIsNone(self.icons.tile_color(self.dir / "nothing.png"))
+
+
+class StoreTest(unittest.TestCase):
+    def setUp(self):
+        from lumen import store
+        self.store = store
+
+    def test_search_asks_for_this_devices_architecture(self):
+        sent = []
+
+        def request(url, body=None, timeout=20):
+            sent.append((url, body))
+            return json.dumps({"hits": [
+                {"app_id": "org.videolan.VLC", "name": "VLC", "summary": "Media player",
+                 "installs_last_month": 10},
+                {"app_id": "bad id; rm -rf", "name": "Evil"},
+                {"app_id": "org.noname.App"},
+                {"name": "No id"}]}).encode()
+
+        found = self.store.search("vlc", arch="aarch64", request=request)
+        self.assertEqual(found, [{"id": "org.videolan.VLC", "name": "VLC",
+                                  "summary": "Media player", "installs": 10}])
+        self.assertEqual(sent[0][1]["filters"], [{"filterType": "arches", "value": "aarch64"}])
+        self.assertEqual(sent[0][1]["query"], "vlc")
+        with self.assertRaises(OSError):
+            self.store.search("x", request=lambda *a, **k: b"<html>error</html>")
+
+    def test_install_refuses_ids_that_are_not_app_ids(self):
+        for bad in ("", "--system", "a b", "x;reboot", "../../etc", "-y"):
+            self.assertEqual(self.store.install(bad), (False, "Not a valid app"), bad)
+            self.assertEqual(self.store.uninstall(bad), (False, "Not a valid app"), bad)
+
+    def test_android_store_download(self):
+        folder = Path(tempfile.mkdtemp())
+        asked = []
+
+        def request(url, body=None, timeout=20):
+            asked.append(url)
+            if url.endswith("/packages/org.fdroid.fdroid"):
+                return b'{"packageName":"org.fdroid.fdroid","suggestedVersionCode":2000053}'
+            return b"PK\x03\x04 pretend apk"
+
+        path = self.store.download_android_store("org.fdroid.fdroid", folder, request)
+        self.assertEqual(path, folder / "org.fdroid.fdroid.apk")
+        self.assertEqual(asked[1], "https://f-droid.org/repo/org.fdroid.fdroid_2000053.apk")
+        with self.assertRaises(OSError):
+            self.store.download_android_store("com.evil.app", folder, request)
+        with self.assertRaises(OSError):                 # an error page instead of an APK
+            self.store.download_android_store(
+                "com.aurora.store", folder,
+                lambda url, body=None, timeout=20: b'{"suggestedVersionCode": 76}'
+                if "api" in url else b"<html>Not found</html>")
+        self.assertFalse((folder / "com.aurora.store.apk").exists())
+
+
 class ConfigTest(unittest.TestCase):
     def test_saved_values_override_defaults_and_missing_ones_are_filled(self):
         path = Path(tempfile.mkdtemp()) / "sub" / "config.json"
         cfg = config.load(path)
-        self.assertTrue(cfg["prefer_1080p"])
-        cfg["prefer_1080p"] = False
+        self.assertEqual(cfg["display_mode"], "auto")
+        cfg["display_mode"] = "native"
         cfg["favorites"].append("plex")
         config.save(cfg, path)
         again = config.load(path)
-        self.assertFalse(again["prefer_1080p"])
+        self.assertEqual(again["display_mode"], "native")
         self.assertIn("plex", again["favorites"])
         self.assertNotIn("plex", config.DEFAULTS["favorites"])   # defaults not mutated
+        # Settings saved by versions before 0.4 keep their meaning.
+        path.write_text('{"prefer_1080p": false}')
+        self.assertEqual(config.load(path)["display_mode"], "native")
+        path.write_text('{"prefer_1080p": true}')
+        old = config.load(path)
+        self.assertEqual(old["display_mode"], "auto")
+        self.assertNotIn("prefer_1080p", old)
         path.write_text("{ broken")
         self.assertEqual(config.load(path)["favorites"], config.DEFAULTS["favorites"])
 

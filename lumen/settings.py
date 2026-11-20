@@ -55,7 +55,7 @@ def root_items(shell):
                  action=page("System update", lambda p: update_items(shell, p), "refresh",
                              "Updates are downloaded from the Lumen TV project page.")),
             Item("About", f"Lumen TV {__version__}", "info",
-                 action=page("About", lambda p: about_items(), "info")),
+                 action=page("About", lambda p: about_items(shell), "info")),
             Item("Power", "Restart or shut down", "power",
                  action=page("Power", lambda p: power_items(shell), "power")),
         ]
@@ -217,21 +217,111 @@ def sound_items(shell, page):
 
 
 def display_items(shell, page):
-    def toggle():
-        shell.cfg["prefer_1080p"] = not shell.cfg["prefer_1080p"]
-        config.save(shell.cfg)
-        shell.sway.setup_outputs(shell.cfg["prefer_1080p"])
+    from . import sway as sw
+    cfg = shell.cfg
+    outputs = [o for o in shell.sway.outputs() if o.get("active") and o.get("current_mode")]
+
+    def describe(setting):
+        if setting == "auto":
+            return "Automatic"
+        if setting == "native":
+            return "Highest"
+        for out in outputs:
+            for mode in out.get("modes", []):
+                if sw.mode_key(mode) == setting:
+                    return sw.mode_label(mode)
+        return "Automatic"
+
+    def choose(setting):
+        previous = cfg["display_mode"]
+        if setting == previous:
+            return shell.pop()
+        cfg["display_mode"] = setting
+        shell.sway.setup_outputs(setting)
+        shell.pop()
+        confirm_display(shell, previous)
+
+    def resolutions():
+        def build(_p):
+            current = cfg["display_mode"]
+            mark = lambda s: "Selected" if s == current else ""
+            items = [
+                Item("Automatic", "Up to 1080p. Smoothest on a Raspberry Pi", "display",
+                     mark("auto"), action=lambda: choose("auto")),
+                Item("Highest", "The largest resolution the TV offers", "display",
+                     mark("native"), action=lambda: choose("native")),
+            ]
+            seen = set()
+            for out in outputs:
+                for mode in sw.available_modes(out):
+                    key = sw.mode_key(mode)
+                    if key not in seen:
+                        seen.add(key)
+                        items.append(Item(sw.mode_label(mode), value=mark(key),
+                                          action=lambda k=key: choose(k)))
+            return items
+        shell.push(ListPage(shell, "Resolution", build, glyph="display",
+                            subtitle="Higher resolutions are sharper but make the "
+                                     "interface and video work harder."))
+
+    def toggle_animations():
+        cfg["animations"] = not cfg["animations"]
+        config.save(cfg)
+        shell.apply_animations()
         page.refresh()
 
-    items = [Item("Limit to 1080p", "Smoother on a Raspberry Pi than rendering in 4K",
-                  "display", "On" if shell.cfg["prefer_1080p"] else "Off", action=toggle)]
-    for out in shell.sway.outputs():
-        mode = out.get("current_mode") or {}
-        if out.get("active") and mode:
-            items.append(Item(out["name"], f"{out.get('make', '')} {out.get('model', '')}".strip(),
-                              value=f"{mode['width']}×{mode['height']} "
-                                    f"@ {round(mode['refresh'] / 1000)} Hz"))
+    items = [
+        Item("Resolution", "Screen resolution and refresh rate", "display",
+             describe(cfg["display_mode"]), action=resolutions),
+        Item("Animations", "Turn off if moving around feels slow", "refresh",
+             "On" if cfg["animations"] else "Off", action=toggle_animations),
+    ]
+    for out in outputs:
+        mode = out["current_mode"]
+        items.append(Item(out["name"], f"{out.get('make', '')} {out.get('model', '')}".strip(),
+                          value=f"Now: {sw.mode_label(mode)}"))
     return items
+
+
+def confirm_display(shell, previous, seconds=15):
+    """Keep the new resolution only if the user can see the screen to say so."""
+    from gi.repository import GLib
+    state = {"timer": 0, "decided": False}
+
+    def finish(keep):
+        if state["decided"]:
+            return
+        state["decided"] = True
+        if state["timer"]:
+            GLib.source_remove(state["timer"])
+        if keep:
+            config.save(shell.cfg)
+        else:
+            shell.cfg["display_mode"] = previous
+            shell.sway.setup_outputs(previous)
+        if shell.page is page:
+            shell.pop()
+
+    def timeout():
+        state["timer"] = 0
+        if not state["decided"]:
+            state["decided"] = True
+            shell.cfg["display_mode"] = previous
+            shell.sway.setup_outputs(previous)
+            if shell.page is page:
+                shell.pop()
+            shell.toast("Resolution restored")
+        return False
+
+    page = ListPage(shell, "Keep this resolution?", lambda _p: [
+        Item("Keep", icon="check", action=lambda: finish(True)),
+        Item("Go back", "Return to the previous resolution", "close",
+             action=lambda: finish(False)),
+    ], subtitle=f"If you do nothing, the previous resolution returns in {seconds} seconds.",
+        glyph="display")
+    page.on_close = lambda: finish(False)        # Back means "go back"
+    state["timer"] = GLib.timeout_add_seconds(seconds, timeout)
+    shell.push(page)
 
 
 def power_items(shell):
@@ -243,7 +333,7 @@ def power_items(shell):
     ]
 
 
-def about_items():
+def about_items(shell=None):
     def read(path):
         try:
             return Path(path).read_text(errors="replace").strip("\x00\n ")
@@ -258,6 +348,7 @@ def about_items():
         Item("Device", value=read("/proc/device-tree/model") or "Unknown"),
         Item("Memory", value=f"{int(mem.group(1)) / 1048576:.1f} GB" if mem else "Unknown"),
         Item("System", value=os_name.group(1) if os_name else "Unknown"),
+        Item("Graphics", value=shell.graphics() if shell else "Unknown"),
         Item("IP address", value=ips.split()[0] if ips.split() else "Not connected"),
     ]
 
@@ -467,7 +558,7 @@ def android_items(shell, page):
         config.save(shell.cfg)
         page.refresh()
 
-    return [
+    return android_store_items(shell, page) + [
         Item("Open Android home screen", icon="android",
              action=lambda: shell.open_android()),
         Item("Install an APK", "From a USB drive or the home folder", "plus",
@@ -478,6 +569,139 @@ def android_items(shell, page):
         Item("Stop Android", "Frees memory until the next Android app is opened", "power",
              action=lambda: helper("Stopping Android…", "stop")),
     ]
+
+
+# --- store --------------------------------------------------------------
+
+def android_store_items(shell, page):
+    """Rows that install an Android app store, for those not installed yet."""
+    from . import store
+    if catalog.android_state() != "ready":
+        return []
+    have = {a.package for a in shell.apps if a.kind == "android"}
+    items = []
+    for package, (name, about) in store.ANDROID_STORES.items():
+        if package in have:
+            continue
+
+        def work(package=package):
+            path = store.download_android_store(package)
+            return catalog.android_helper("install", str(path))
+
+        def done(result, name=name):
+            if getattr(result, "returncode", 1) == 0:
+                shell.toast(f"{name} installed. It is on the home screen.")
+                shell.reload_apps()
+            elif isinstance(result, Exception):
+                shell.toast(str(result) or f"{name} could not be downloaded")
+            else:
+                lines = (getattr(result, "stderr", "") or "").strip().splitlines()
+                shell.toast(lines[-1] if lines else f"{name} could not be installed")
+            page.refresh()
+
+        items.append(Item(f"Install {name}", about, "android",
+                          action=lambda w=work, d=done, n=name: shell.busy(
+                              f"Installing {n}…", w, d,
+                              hint="Downloading from f-droid.org")))
+    return items
+
+
+def store_page(shell):
+    return ListPage(shell, "Store", lambda p: store_items(shell, p), glyph="store",
+                    subtitle="Linux apps from Flathub. Only apps built for this "
+                             "device are shown.")
+
+
+def store_items(shell, page):
+    from . import store
+    from .widgets import run_async
+    head = []
+    if store.flatpak_available():
+        head.append(Item("Search Flathub", "Find an app by name", "search",
+                         action=lambda: shell.push(PromptPage(
+                             shell, "Search", lambda q: shell.push(store_results(shell, q)),
+                             subtitle="Search Flathub for apps", glyph="search"))))
+    else:
+        head.append(Item("Flatpak is not installed",
+                         "Run Settings › System update to add app store support", "close"))
+    head += android_store_items(shell, page)
+    if catalog.android_state() != "ready":
+        head.append(Item("Android app stores", "Set up Android first to add F-Droid or "
+                         "Aurora Store", "android",
+                         action=lambda: shell.push(android_page(shell))))
+    if not store.flatpak_available():
+        return head
+
+    def show(result):
+        if isinstance(result, Exception):
+            return page.set_items(head + [Item("Flathub could not be reached",
+                                               "Check the network connection", "close")])
+        apps, have = result
+        page.set_items(head + [store_row(shell, a, have) for a in apps])
+
+    page.set_items(head + [Item("Loading popular apps…")])
+    run_async(lambda: (store.search("", 30), store.installed()), show)
+
+
+def store_row(shell, app, have):
+    return Item(app["name"], app["summary"], "store",
+                "Installed" if app["id"] in have else "",
+                action=lambda: shell.push(store_app_page(shell, app)))
+
+
+def store_results(shell, query):
+    from . import store
+    from .widgets import run_async
+
+    def build(page):
+        def show(result):
+            if isinstance(result, Exception):
+                return page.set_items([Item("Flathub could not be reached",
+                                            "Check the network connection", "close")])
+            apps, have = result
+            page.set_items([store_row(shell, a, have) for a in apps]
+                           or [Item("No apps found", "Try a different word")])
+
+        page.loading("Searching…")
+        run_async(lambda: (store.search(query, 40), store.installed()), show)
+
+    return ListPage(shell, f"“{query}”", build, subtitle="Results from Flathub",
+                    glyph="search")
+
+
+def store_app_page(shell, app):
+    from . import store
+
+    def build(page):
+        installed = app["id"] in store.installed()
+
+        def finish(result, verb):
+            ok, message = result if isinstance(result, tuple) else (False, "That did not work")
+            shell.toast(f"{app['name']} {verb}" if ok else message)
+            shell.reload_apps()
+            page.refresh()
+
+        def install():
+            shell.busy(f"Installing {app['name']}…", lambda: store.install(app["id"]),
+                       lambda r: finish(r, "installed. It is on the home screen."),
+                       hint="The first app also downloads shared parts, which can take "
+                            "several minutes.")
+
+        def remove():
+            shell.busy(f"Removing {app['name']}…", lambda: store.uninstall(app["id"]),
+                       lambda r: finish(r, "removed"))
+
+        def open_it():
+            found = next((a for a in shell.apps if a.id == f"flatpak:{app['id']}"), None)
+            if found:
+                shell.open_app(found)
+
+        if installed:
+            return [Item("Open", icon="check", action=open_it),
+                    Item("Remove", "Uninstall this app", "trash", action=remove)]
+        return [Item("Install", app["id"], "plus", action=install)]
+
+    return ListPage(shell, app["name"], build, subtitle=app["summary"], glyph="store")
 
 
 # --- files --------------------------------------------------------------
@@ -566,4 +790,18 @@ def app_menu_items(shell, app):
     elif app.kind == "android":
         items.append(Item("Hide", "Restore hidden apps from Settings › Web apps", "close",
                           action=hide))
+    elif app.kind == "flatpak":
+        def uninstall():
+            from . import store
+
+            def done(result):
+                ok, message = result if isinstance(result, tuple) else (False, "")
+                shell.toast(f"{app.name} removed" if ok else message or "Could not remove it")
+                shell.pop()
+                shell.reload_apps()
+
+            shell.busy(f"Removing {app.name}…", lambda: store.uninstall(app.package), done)
+
+        items.append(Item("Uninstall", "Remove this app from the device", "trash",
+                          action=uninstall))
     return items

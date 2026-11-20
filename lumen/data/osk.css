@@ -18,7 +18,6 @@ window.osk .key {
   background-color: rgba(255, 255, 255, 0.08);
   font-size: 27px;
   font-weight: 600;
-  transition: background-color 90ms ease, transform 90ms ease;
 }
 window.osk .key.special { background-color: rgba(255, 255, 255, 0.15); font-size: 22px; }
 window.osk .key.on { background-color: #6ea8ff; color: #0b0e13; }

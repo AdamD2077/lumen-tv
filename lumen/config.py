@@ -47,7 +47,8 @@ DEFAULTS = {
     "favorites": ["youtube", "netflix", "spotify", "browser", "files"],
     "hidden": [],
     "web_apps": DEFAULT_WEB_APPS,
-    "prefer_1080p": True,
+    "display_mode": "auto",      # "auto" | "native" | "WIDTHxHEIGHT@mHz"
+    "animations": True,
     "android_autostart": False,
     "remote_access": False,
     "remote_port": 8080,
@@ -63,6 +64,10 @@ def load(path=None):
         with open(path or CONFIG_FILE, encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict):
+            # Before 0.4 the only display choice was "limit to 1080p".
+            if "prefer_1080p" in data and "display_mode" not in data:
+                data["display_mode"] = "auto" if data["prefer_1080p"] else "native"
+            data.pop("prefer_1080p", None)
             cfg.update(data)
     except (OSError, ValueError):
         pass

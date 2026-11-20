@@ -104,30 +104,71 @@ class Sway:
             self.command(f'[workspace="{ws}"] kill')
         self.go_home()
 
-    def setup_outputs(self, prefer_1080p=True):
-        """Pick a TV-friendly mode and scale so the UI is always laid out at 1080p.
-
-        Rendering at 1080p instead of 4K keeps a Pi's GPU comfortable."""
+    def setup_outputs(self, setting="auto"):
+        """Apply the display setting to every output (see `pick_mode`) and scale
+        it so the UI is always laid out on a 1920x1080 canvas."""
         for out in self.outputs():
-            cmd = output_command(out, prefer_1080p)
+            cmd = output_command(out, setting)
             if cmd:
                 self.command(cmd)
 
 
-def output_command(out, prefer_1080p=True):
-    cur = out.get("current_mode") or {}
-    width, height = cur.get("width", 0), cur.get("height", 0)
-    if not out.get("active") or not height:
+SMOOTH_HZ = 60500      # in mHz: what "auto" and "native" will not exceed
+
+
+def mode_key(mode):
+    return f"{mode['width']}x{mode['height']}@{mode['refresh']}"
+
+
+def mode_label(mode):
+    return f"{mode['width']} × {mode['height']} · {round(mode['refresh'] / 1000)} Hz"
+
+
+def available_modes(out):
+    """The modes worth offering: 720p and up, one per resolution and refresh
+    rate, largest first."""
+    best = {}
+    for mode in out.get("modes", []):
+        if mode["height"] < 720:
+            continue
+        key = (mode["width"], mode["height"], round(mode["refresh"] / 1000))
+        if key not in best or mode["refresh"] > best[key]["refresh"]:
+            best[key] = mode
+    return sorted(best.values(),
+                  key=lambda m: (m["width"] * m["height"], m["refresh"]), reverse=True)
+
+
+def pick_mode(out, setting="auto"):
+    """Which mode a display setting means for this output, or None to leave it.
+
+    "auto"       the largest mode up to 1080p: easy on a Pi's GPU
+    "native"     the largest mode the display offers
+    "WxH@mHz"    exactly that mode (falls back to "auto" if it is not offered)"""
+    modes = available_modes(out)
+    if not modes:
         return None
+    if setting not in ("auto", "native"):
+        for mode in out.get("modes", []):
+            if mode_key(mode) == setting:
+                return mode
+        setting = "auto"
+    if setting == "auto":
+        capped = [m for m in modes if m["height"] <= 1080 and m["width"] <= 1920]
+        modes = capped or modes[-1:]
+    # Prefer ordinary refresh rates; a 120 Hz mode has to be chosen explicitly.
+    calm = [m for m in modes if m["refresh"] <= SMOOTH_HZ] or modes
+    return max(calm, key=lambda m: (m["width"] * m["height"], m["refresh"]))
+
+
+def output_command(out, setting="auto"):
+    cur = out.get("current_mode") or {}
+    if not out.get("active") or not cur.get("height"):
+        return None
+    mode = pick_mode(out, setting) or cur
     parts = []
-    if prefer_1080p and height > 1080:
-        full_hd = [m for m in out.get("modes", [])
-                   if (m["width"], m["height"]) == (1920, 1080) and m["refresh"] <= 60500]
-        if full_hd:
-            best = max(full_hd, key=lambda m: m["refresh"])
-            parts.append(f"mode 1920x1080@{best['refresh'] / 1000:.3f}Hz")
-            width, height = 1920, 1080
+    if mode_key(mode) != mode_key(cur):
+        parts.append(f"mode {mode['width']}x{mode['height']}@{mode['refresh'] / 1000:.3f}Hz")
     # Fit a 1920x1080 logical canvas inside the output.
-    scale = round(min(width / 1920, height / 1080), 3)
+    scale = round(min(mode["width"] / 1920, mode["height"] / 1080), 3)
     parts.append(f"scale {max(scale, 0.25):g}")
     return f"output {out['name']} " + " ".join(parts)
