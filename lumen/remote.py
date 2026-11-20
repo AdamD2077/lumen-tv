@@ -172,6 +172,12 @@ DIAGNOSTICS = [
     ("Android: kernel support",
      "grep -i binder /proc/filesystems 2>&1; ls -l /dev/binder* /dev/binderfs 2>&1 | head; "
      "lsmod | grep -i -E 'binder|ashmem' ; cat /proc/pressure/memory 2>&1 | head -n 2"),
+    ("Android: network setup",
+     "grep -n -E '^LXC_USE_NFT|^use_nft|IPTABLES_BIN=' "
+     "/usr/lib/waydroid/data/scripts/waydroid-net.sh 2>&1 | head; "
+     "for t in nft iptables iptables-legacy iptables-nft dnsmasq; do "
+     "printf '%s: ' $t; command -v $t || PATH=$PATH:/usr/sbin command -v $t || echo missing; "
+     "done; ip -br addr show waydroid0 2>&1"),
     ("Android: files", "ls -la /var/lib/waydroid/ 2>&1; ls -la /var/lib/waydroid/images 2>&1; "
                        "ls ~/.local/share/applications 2>&1 | head -n 30"),
     ("Android: configuration", "cat /var/lib/waydroid/waydroid.cfg 2>&1 | head -n 40"),

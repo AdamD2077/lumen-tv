@@ -103,6 +103,20 @@ if [ "$ANDROID" = 1 ] && ! command -v waydroid >/dev/null; then
     curl -fsSL https://repo.waydro.id | bash
     apt-get install -y --no-install-recommends waydroid
 fi
+if [ "$ANDROID" = 1 ]; then
+    # Android's network: Waydroid's script defaults to the legacy iptables
+    # interface, which current Raspberry Pi kernels no longer provide
+    # ("Module ip_tables not found"), so the container never starts. Switch it
+    # to nftables. A Waydroid package upgrade restores the file, hence every run.
+    apt-get install -y --no-install-recommends nftables
+    NET_SCRIPT=/usr/lib/waydroid/data/scripts/waydroid-net.sh
+    if [ -f "$NET_SCRIPT" ] && grep -qE '^LXC_USE_NFT="?false"?' "$NET_SCRIPT"; then
+        sed -i -E 's/^LXC_USE_NFT="?false"?/LXC_USE_NFT="true"/' "$NET_SCRIPT"
+        if [ "$CHROOT" != 1 ] && systemctl is-active --quiet waydroid-container; then
+            systemctl restart waydroid-container || true
+        fi
+    fi
+fi
 
 # --- user -----------------------------------------------------------------
 say "Setting up user '$TV_USER'"
