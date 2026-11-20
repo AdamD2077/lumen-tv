@@ -300,9 +300,15 @@ class AppsTest(unittest.TestCase):
         folder = Path(tempfile.mkdtemp())
         (folder / "waydroid.org.videolan.vlc.desktop").write_text(
             "[Desktop Entry]\nType=Application\nName=VLC\n"
-            "Exec=waydroid app launch org.videolan.vlc\nIcon=/nonexistent/vlc.png\n")
-        (folder / "waydroid.com.hidden.desktop").write_text(
-            "[Desktop Entry]\nName=Hidden\nNoDisplay=true\n")
+            "Exec=waydroid app launch org.videolan.vlc\nIcon=/nonexistent/vlc.png\n"
+            # As written by Waydroid 1.6 on a real device: hidden from desktop
+            # menus, with an extra action section.
+            "Categories=X-WayDroid-App;\nActions=app-settings;\nNoDisplay=true\n\n"
+            "[Desktop Action app-settings]\nName=App Settings\n"
+            "Exec=waydroid app intent android.settings.APPLICATION_DETAILS_SETTINGS "
+            "package:org.videolan.vlc\n")
+        (folder / "waydroid.com.android.inputmethod.latin.desktop").write_text(
+            "[Desktop Entry]\nName=Android Keyboard (AOSP)\nNoDisplay=true\n")
         (folder / "waydroid.broken.desktop").write_text("not a desktop file")
         (folder / "Waydroid.desktop").write_text("[Desktop Entry]\nName=Waydroid\n")
         found = apps.android_apps([folder])

@@ -143,6 +143,10 @@ def system_apps():
     ]
 
 
+# Entries Waydroid lists that are not something to open from a home screen.
+ANDROID_NOT_APPS = {"com.android.inputmethod.latin"}
+
+
 def android_dirs():
     return [Path.home() / ".local/share/applications"]
 
@@ -158,9 +162,11 @@ def android_apps(dirs=None):
                 entry = parser["Desktop Entry"]
             except (configparser.Error, KeyError, OSError):
                 continue
-            if entry.get("NoDisplay", "false").lower() == "true":
-                continue
+            # Waydroid marks every app NoDisplay=true (to keep them out of desktop
+            # menus), so that flag says nothing about whether to show an app here.
             package = path.name[len("waydroid."):-len(".desktop")]
+            if package in ANDROID_NOT_APPS:
+                continue
             icon = entry.get("Icon", "")
             icon = icon if os.path.isfile(icon) else ""
             apps.append(App(
