@@ -49,6 +49,8 @@ DEFAULTS = {
     "web_apps": DEFAULT_WEB_APPS,
     "prefer_1080p": True,
     "android_autostart": False,
+    "remote_access": False,
+    "remote_port": 8080,
     "search_url": "https://duckduckgo.com/?q={}",
     "browser_home": "https://duckduckgo.com",
 }

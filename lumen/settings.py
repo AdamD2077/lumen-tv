@@ -2,7 +2,6 @@
 
 import os
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -47,6 +46,11 @@ def root_items(shell):
                  action=lambda: shell.push(android_page(shell))),
             Item("Web apps", "Add sites to the home screen", "globe",
                  action=page("Web apps", lambda p: webapp_items(shell, p), "globe")),
+            Item("Remote access", "Control and manage this TV from a phone or computer",
+                 "display", "On" if shell.cfg["remote_access"] else "Off",
+                 action=page("Remote access", lambda p: remote_items(shell, p), "display",
+                             "Open the address in a web browser on the same network, "
+                             "then enter the PIN.")),
             Item("System update", "Get the latest version of Lumen TV", "refresh",
                  action=page("System update", lambda p: update_items(shell, p), "refresh",
                              "Updates are downloaded from the Lumen TV project page.")),
@@ -258,6 +262,40 @@ def about_items():
     ]
 
 
+# --- remote access ------------------------------------------------------
+
+def remote_items(shell, page):
+    from . import remote
+    enabled = shell.cfg["remote_access"]
+
+    def toggle():
+        shell.cfg["remote_access"] = not enabled
+        config.save(shell.cfg)
+        page.refresh()
+
+    items = [Item("Remote access", "Anyone on your network who knows the PIN can control "
+                  "this TV", "display", "On" if enabled else "Off", action=toggle)]
+    if enabled:
+        auth = remote.Auth()
+        _, ips = run("hostname", "-I", timeout=5)
+        port = shell.cfg.get("remote_port") or remote.DEFAULT_PORT
+        address = f"http://{ips.split()[0]}:{port}" if ips.split() else "Not connected"
+
+        def new_pin():
+            auth.new_pin()
+            shell.toast("New PIN set. Paired devices must pair again.")
+            page.refresh()
+
+        items += [
+            Item("Address", "Type this into a browser on your phone or computer",
+                 "globe", address),
+            Item("PIN", icon="check", value=" ".join(auth.pin)),
+            Item("Change PIN", "Also signs out every paired device", "refresh",
+                 action=new_pin),
+        ]
+    return items
+
+
 # --- system update ------------------------------------------------------
 
 def parse_update_check(output):
@@ -333,13 +371,7 @@ def webapp_items(shell, page):
     def add():
         def with_name(name):
             def with_url(url):
-                app_id = catalog.slugify(name)
-                taken = {a.id for a in shell.apps}
-                while app_id in taken:
-                    app_id += "-2"
-                shell.cfg["web_apps"].append(
-                    {"id": app_id, "name": name, "url": catalog.normalize_url(url)})
-                shell.cfg["favorites"].append(app_id)
+                catalog.add_web_app(shell.cfg, name, url)
                 shell.save()
                 shell.toast(f"{name} added to the home screen")
             shell.push(PromptPage(shell, "Address", with_url, glyph="globe",
@@ -512,10 +544,7 @@ def app_menu_items(shell, app):
         shell.save()
 
     def remove():
-        cfg["web_apps"] = [w for w in cfg["web_apps"] if w.get("id") != app.id]
-        if favorite:
-            cfg["favorites"].remove(app.id)
-        shutil.rmtree(config.DATA_DIR / "chromium" / app.css, ignore_errors=True)
+        catalog.remove_web_app(cfg, app.id)
         shell.pop()
         shell.save()
 

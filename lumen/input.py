@@ -251,6 +251,7 @@ class Out:
         self.charmap = CHARMAP
         names = {k for k, _ in CHARMAP.values()} | set(Mapper.NORMAL.values()) | set(
             Mapper.NAV_KEYS.values()) | {"KEY_BACKSPACE", "KEY_LEFTSHIFT", "BTN_LEFT", "BTN_RIGHT"}
+        self.key_names = {n for n in names if n.startswith("KEY_")}
         self.ui = UInput(
             {ecodes.EV_KEY: sorted(getattr(ecodes, n) for n in names),
              ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y, ecodes.REL_WHEEL]},
@@ -404,7 +405,7 @@ class Daemon:
             conn, _ = self.server.accept()
             with conn:
                 conn.settimeout(0.3)
-                line = conn.recv(256).decode(errors="replace").strip()
+                line = conn.recv(4096).decode(errors="replace").strip("\r\n")
         except OSError:
             return True
         self.handle(line)
@@ -415,6 +416,13 @@ class Daemon:
             self.home()
         elif line == "close":
             self.close_app()
+        elif line.startswith("key "):
+            # Sent by the web remote. Only keys our virtual keyboard has.
+            if line[4:] in self.out.key_names:
+                self.out.tap(line[4:])
+        elif line.startswith("text "):
+            for ch in line[5:]:
+                self.out.type_char(ch)
         elif line == "osk show":
             self.osk.show()
         elif line == "osk hide":

@@ -342,6 +342,166 @@ class SettingsParsingTest(unittest.TestCase):
         self.assertTrue(nets[2]["secure"])
 
 
+class RemoteAuthTest(unittest.TestCase):
+    def setUp(self):
+        from lumen import remote
+        self.remote = remote
+        self.path = Path(tempfile.mkdtemp()) / "remote.json"
+        self.auth = remote.Auth(self.path)
+
+    def test_pin_pairs_and_tokens_are_stored_hashed(self):
+        self.assertRegex(self.auth.pin, r"^\d{6}$")
+        token, error = self.auth.pair(self.auth.pin)
+        self.assertTrue(token and not error)
+        self.assertTrue(self.auth.valid(token))
+        self.assertFalse(self.auth.valid(token + "x"))
+        self.assertFalse(self.auth.valid(""))
+        self.assertFalse(self.auth.valid(None))
+        self.assertNotIn(token, self.path.read_text())
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+
+    def test_wrong_pins_lock_pairing_for_a_while(self):
+        wrong = "000000" if self.auth.pin != "000000" else "111111"
+        for _ in range(self.auth.MAX_FAILS):
+            self.assertEqual(self.auth.pair(wrong, now=100.0)[0], None)
+        token, error = self.auth.pair(self.auth.pin, now=101.0)     # correct, but locked
+        self.assertIsNone(token)
+        self.assertIn("Too many", error)
+        token, _ = self.auth.pair(self.auth.pin, now=100.0 + self.auth.LOCK_SECONDS + 1)
+        self.assertTrue(token)
+
+    def test_new_pin_from_the_tv_signs_everyone_out(self):
+        token, _ = self.auth.pair(self.auth.pin)
+        launcher_side = self.remote.Auth(self.path)       # the launcher's own instance
+        self.assertEqual(launcher_side.pin, self.auth.pin)
+        old = self.auth.pin
+        while launcher_side.new_pin() == old:
+            pass
+        self.assertFalse(self.auth.valid(token))
+        self.assertIsNone(self.auth.pair(old)[0])
+        self.assertTrue(self.auth.pair(launcher_side.pin)[0])
+
+
+class RemoteApiTest(unittest.TestCase):
+    """Talks to the real HTTP server on localhost; the TV side is faked."""
+
+    def setUp(self):
+        import http.client
+        from lumen import remote
+        self.remote, self.http = remote, http.client
+        tmp = Path(tempfile.mkdtemp())
+        self.config_path = tmp / "config.json"
+        self.sent = []
+        self.auth = remote.Auth(tmp / "remote.json")
+        self.device = remote.Device(sway=sway.Sway(path=""), send=lambda c: self.sent.append(c) or True,
+                                    config_path=self.config_path, downloads=tmp / "dl")
+        self.server = remote.serve(0, self.auth, self.device)
+        self.port = self.server.server_address[1]
+        self.cookie = None
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+    def call(self, method, path, body=None, headers=None, cookie=True):
+        conn = self.http.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        send = {"X-Lumen": "1"} if headers is None else dict(headers)
+        if cookie and self.cookie:
+            send["Cookie"] = self.cookie
+        data = json.dumps(body).encode() if isinstance(body, dict) else body
+        conn.request(method, path, body=data, headers=send)
+        response = conn.getresponse()
+        raw = response.read()
+        conn.close()
+        return response, (json.loads(raw) if response.getheader("Content-Type") == "application/json" else raw)
+
+    def pair(self):
+        response, _ = self.call("POST", "/api/pair", {"pin": self.auth.pin})
+        self.assertEqual(response.status, 200)
+        self.cookie = response.getheader("Set-Cookie").split(";")[0]
+        self.assertIn("HttpOnly", response.getheader("Set-Cookie"))
+        self.assertIn("SameSite=Strict", response.getheader("Set-Cookie"))
+
+    def test_page_is_public_but_everything_else_needs_pairing(self):
+        response, page = self.call("GET", "/")
+        self.assertEqual(response.status, 200)
+        self.assertIn(b"Lumen TV", page)
+        self.assertNotIn(self.auth.pin.encode(), page)
+        for method, path in (("GET", "/api/state"), ("GET", "/api/log"),
+                             ("POST", "/api/key"), ("POST", "/api/power"),
+                             ("POST", "/api/add-webapp"), ("POST", "/api/apk?name=a.apk")):
+            response, _ = self.call(method, path, {"key": "ok", "action": "restart"})
+            self.assertEqual(response.status, 401, path)
+        self.assertEqual(self.sent, [])
+        response, body = self.call("POST", "/api/pair", {"pin": "nope"})
+        self.assertEqual((response.status, body["error"]), (403, "Wrong PIN"))
+        response, _ = self.call("POST", "/api/key", {"key": "ok"},
+                                headers={"X-Lumen": "1", "Cookie": "lumen_session=forged"})
+        self.assertEqual(response.status, 401)
+
+    def test_cross_site_requests_are_refused_even_when_paired(self):
+        self.pair()
+        response, _ = self.call("POST", "/api/key", {"key": "ok"}, headers={})
+        self.assertEqual(response.status, 403)
+        self.assertEqual(self.sent, [])
+
+    def test_remote_keys_and_text(self):
+        self.pair()
+        for key in ("up", "ok", "back", "home", "keyboard"):
+            self.assertEqual(self.call("POST", "/api/key", {"key": key})[0].status, 200)
+        self.assertEqual(self.sent, ["key KEY_UP", "key KEY_ENTER", "key KEY_ESC", "home",
+                                     "osk toggle"])
+        self.assertEqual(self.call("POST", "/api/key", {"key": "KEY_POWER"})[0].status, 400)
+        self.call("POST", "/api/text", {"text": "hello\nworld"})
+        self.assertEqual(self.sent[-1], "text hello world")       # one line, no injection
+        self.assertEqual(self.call("POST", "/api/nothing", {})[0].status, 404)
+        self.assertEqual(self.call("POST", "/api/key", b"not json")[0].status, 400)
+
+    def test_tv_not_responding_is_an_error(self):
+        self.pair()
+        self.device.send = lambda _c: False
+        response, body = self.call("POST", "/api/key", {"key": "ok"})
+        self.assertEqual(response.status, 503)
+        self.assertIn("did not respond", body["error"])
+
+    def test_state_and_web_app_management(self):
+        self.pair()
+        response, state = self.call("GET", "/api/state")
+        self.assertEqual(response.status, 200)
+        ids = [a["id"] for a in state["apps"]]
+        self.assertIn("youtube", ids)
+        self.assertIn("browser", ids)
+        self.assertNotIn("settings", ids)                 # TV-only screens are not offered
+        self.assertEqual(state["showing"], "Home")
+        self.assertGreater(state["stats"]["memory_total_mb"], 0)
+
+        self.assertEqual(self.call("POST", "/api/add-webapp",
+                                   {"name": "Jellyfin", "url": "nas.local:8096"})[0].status, 200)
+        self.assertEqual(self.call("POST", "/api/add-webapp",
+                                   {"name": "Jellyfin", "url": "other.local"})[0].status, 200)
+        saved = config.load(self.config_path)
+        self.assertEqual([(w["id"], w["url"]) for w in saved["web_apps"][-2:]],
+                         [("jellyfin", "https://nas.local:8096"), ("jellyfin-2", "https://other.local")])
+        self.assertIn("jellyfin", saved["favorites"])
+        for bad in ({"name": "", "url": "x.org"}, {"name": "X", "url": "javascript:alert(1)"},
+                    {"name": "X", "url": ""}):
+            self.assertEqual(self.call("POST", "/api/add-webapp", bad)[0].status, 400, bad)
+
+        self.assertEqual(self.call("POST", "/api/remove-webapp", {"id": "jellyfin"})[0].status, 200)
+        saved = config.load(self.config_path)
+        self.assertNotIn("jellyfin", [w["id"] for w in saved["web_apps"]])
+        self.assertNotIn("jellyfin", saved["favorites"])
+        self.assertEqual(self.call("POST", "/api/remove-webapp", {"id": "jellyfin"})[0].status, 404)
+
+    def test_links_and_uploads_are_validated(self):
+        self.pair()
+        for bad in ("", "file:///etc/passwd", "javascript:alert(1)"):
+            self.assertEqual(self.call("POST", "/api/open-url", {"url": bad})[0].status, 400, bad)
+        self.assertEqual(self.call("POST", "/api/power", {"action": "format"})[0].status, 400)
+        # No Android on the test machine: an upload must be refused, and nothing written.
+        response, body = self.call("POST", "/api/apk?name=../../evil.apk", b"x" * 10)
+        self.assertEqual(response.status, 400)
+        self.assertFalse((self.device.downloads).exists())
+
+
 class UpdateTest(unittest.TestCase):
     """Runs the real lumen-update script against a local git repository."""
 

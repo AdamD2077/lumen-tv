@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#090c11">
+<title>Lumen TV</title>
+<style>
+  :root {
+    --bg: #090c11; --panel: #141922; --panel-2: #1c2330; --line: rgba(255,255,255,.09);
+    --text: #f3f5f8; --dim: rgba(243,245,248,.6); --accent: #6ea8ff; --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.4 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  main { max-width: 560px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 4px 16px; }
+  h1 { font-size: 22px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
+  h2 { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+       color: var(--dim); margin: 26px 4px 10px; }
+  .dim { color: var(--dim); }
+  .small { font-size: 14px; }
+  [hidden] { display: none !important; }
+
+  button, input { font: inherit; color: inherit; }
+  button {
+    border: 0; border-radius: 14px; background: var(--panel-2); padding: 14px 16px;
+    font-weight: 600; cursor: pointer; touch-action: manipulation; user-select: none;
+    transition: transform .08s ease, background-color .12s ease;
+  }
+  button:active { transform: scale(.96); background: #2a3447; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--text); color: #0b0e13; }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .45; cursor: default; }
+  input[type=text], input[type=url], input[type=tel] {
+    width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 14px;
+    background: var(--panel); padding: 14px 16px;
+  }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .row > .fit { flex: 0 0 auto; }
+  .stack { display: grid; gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+
+  /* remote */
+  .dpad {
+    position: relative; width: min(74vw, 300px); aspect-ratio: 1; margin: 6px auto 18px;
+    border-radius: 50%; background: var(--panel); border: 1px solid var(--line);
+  }
+  .dpad button { position: absolute; background: transparent; padding: 0; border-radius: 50%;
+                 width: 30%; height: 30%; font-size: 24px; }
+  .dpad button:active { background: rgba(255,255,255,.1); }
+  .dpad .up { top: 3%; left: 35%; } .dpad .down { bottom: 3%; left: 35%; }
+  .dpad .left { left: 3%; top: 35%; } .dpad .right { right: 3%; top: 35%; }
+  .dpad .ok { top: 31%; left: 31%; width: 38%; height: 38%; background: var(--text);
+              color: #0b0e13; font-size: 18px; font-weight: 800; }
+  .dpad .ok:active { background: #cfd6e2; }
+  .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .keys button { padding: 14px 4px; font-size: 15px; }
+  .keys .wide { grid-column: span 2; }
+
+  /* apps */
+  .apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .app { position: relative; aspect-ratio: 16/9; border-radius: 14px; padding: 10px; font-size: 16px;
+         font-weight: 800; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.35); overflow: hidden; }
+  .app.running::after { content: ""; position: absolute; top: 9px; right: 9px; width: 9px; height: 9px;
+                        border-radius: 50%; background: #fff; }
+  .list { display: grid; gap: 8px; }
+  .list .item { display: flex; align-items: center; gap: 10px; background: var(--panel);
+                border: 1px solid var(--line); border-radius: 14px; padding: 6px 6px 6px 16px; }
+  .list .item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list .item button { padding: 10px 14px; }
+
+  /* system */
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; margin: 0; }
+  dt { color: var(--dim); } dd { margin: 0; text-align: right; }
+  pre { margin: 10px 0 0; padding: 12px; max-height: 320px; overflow: auto; border-radius: 12px;
+        background: #05070a; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace;
+        white-space: pre-wrap; word-break: break-word; }
+
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 6px;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        background: rgba(9,12,17,.92); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+  nav button { flex: 1; max-width: 180px; background: transparent; color: var(--dim); border-radius: 999px; }
+  nav button[aria-selected=true] { background: var(--text); color: #0b0e13; }
+
+  #toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
+           transform: translateX(-50%); max-width: 90vw; padding: 12px 18px; border-radius: 999px;
+           background: var(--text); color: #0b0e13; font-weight: 600; font-size: 15px;
+           box-shadow: 0 8px 24px rgba(0,0,0,.5); pointer-events: none; opacity: 0; transition: opacity .2s; }
+  #toast.show { opacity: 1; }
+
+  #pair { max-width: 380px; margin: 14vh auto 0; text-align: center; }
+  #pair input { text-align: center; font-size: 30px; letter-spacing: 10px; font-weight: 700; margin: 22px 0 12px; }
+  #pair button { width: 100%; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <section id="pair" hidden>
+    <h1>Lumen TV</h1>
+    <p class="dim">On the TV, open Settings › Remote access and enter the PIN shown there.</p>
+    <form id="pair-form">
+      <input id="pin" type="tel" inputmode="numeric" autocomplete="off" maxlength="6"
+             placeholder="••••••" aria-label="PIN">
+      <button class="primary" type="submit">Connect</button>
+    </form>
+    <p id="pair-error" class="small" style="color: var(--danger)" role="alert"></p>
+  </section>
+
+  <div id="app" hidden>
+    <header>
+      <h1 id="name">Lumen TV</h1>
+      <span class="dim small" id="showing"></span>
+    </header>
+
+    <section id="tab-remote">
+      <div class="dpad">
+        <button class="up" data-key="up" data-repeat aria-label="Up">▲</button>
+        <button class="left" data-key="left" data-repeat aria-label="Left">◀</button>
+        <button class="ok" data-key="ok">OK</button>
+        <button class="right" data-key="right" data-repeat aria-label="Right">▶</button>
+        <button class="down" data-key="down" data-repeat aria-label="Down">▼</button>
+      </div>
+      <div class="keys">
+        <button data-key="back">Back</button>
+        <button class="wide" data-key="home">Home</button>
+        <button data-key="menu">Menu</button>
+        <button data-key="voldown" data-repeat aria-label="Volume down">Vol −</button>
+        <button data-key="mute">Mute</button>
+        <button data-key="volup" data-repeat aria-label="Volume up">Vol +</button>
+        <button data-key="playpause" aria-label="Play or pause">⏯</button>
+      </div>
+
+      <h2>Type on the TV</h2>
+      <form id="text-form" class="row">
+        <input id="text" type="text" autocomplete="off" autocapitalize="off" placeholder="Text to type"
+               aria-label="Text to type">
+        <button class="fit primary" type="submit">Send</button>
+      </form>
+      <div class="row" style="margin-top: 10px">
+        <button data-key="backspace" data-repeat>⌫ Delete</button>
+        <button data-key="ok">⏎ Enter</button>
+        <button data-key="keyboard">TV keyboard</button>
+      </div>
+
+      <h2>Open a link on the TV</h2>
+      <form id="url-form" class="row">
+        <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+               placeholder="example.org" aria-label="Web address">
+        <button class="fit primary" type="submit">Open</button>
+      </form>
+    </section>
+
+    <section id="tab-apps" hidden>
+      <div class="apps" id="apps"></div>
+      <div class="row" style="margin-top: 12px">
+        <button data-key="close">Close the app on screen</button>
+      </div>
+
+      <h2>Add a web app</h2>
+      <form id="webapp-form" class="stack">
+        <input id="webapp-name" type="text" maxlength="40" placeholder="Name" aria-label="Name">
+        <input id="webapp-url" type="url" inputmode="url" autocapitalize="off" placeholder="Address, e.g. nas.local:8096"
+               aria-label="Address">
+        <button class="primary" type="submit">Add to the home screen</button>
+      </form>
+
+      <h2>Web apps</h2>
+      <div class="list" id="webapps"></div>
+
+      <div id="apk-box" hidden>
+        <h2>Install an Android app</h2>
+        <div class="card stack">
+          <span class="dim small">Choose an .apk file from this device. It is sent to the TV and installed.</span>
+          <input id="apk" type="file" accept=".apk,application/vnd.android.package-archive" aria-label="APK file">
+          <button id="apk-send" class="primary">Install on the TV</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-system" hidden>
+      <div class="card"><dl id="stats"></dl></div>
+      <p id="job" class="small dim" style="margin: 12px 4px 0"></p>
+      <h2>Maintenance</h2>
+      <div class="stack">
+        <button id="update">Update Lumen TV</button>
+        <div class="row">
+          <button class="danger" data-power="restart">Restart</button>
+          <button class="danger" data-power="shutdown">Shut down</button>
+        </div>
+      </div>
+      <h2>Session log</h2>
+      <button id="log-load" style="width: 100%">Show the log</button>
+      <pre id="log" hidden></pre>
+    </section>
+  </div>
+</main>
+
+<nav id="nav" hidden role="tablist">
+  <button role="tab" data-tab="remote" aria-selected="true">Remote</button>
+  <button role="tab" data-tab="apps" aria-selected="false">Apps</button>
+  <button role="tab" data-tab="system" aria-selected="false">System</button>
+</nav>
+<div id="toast" role="status"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let state = null, toastTimer = 0;
+
+function toast(text) {
+  $("toast").textContent = text;
+  $("toast").classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2600);
+}
+
+async function api(path, body, raw) {
+  const options = { method: body === undefined ? "GET" : "POST", credentials: "same-origin",
+                    headers: { "X-Lumen": "1" } };
+  if (raw) options.body = body;
+  else if (body !== undefined) {
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  let response;
+  try { response = await fetch(path, options); }
+  catch (e) { throw new Error("The TV is not reachable"); }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 401) { showPairing(); throw new Error("Not paired"); }
+  if (!response.ok) throw new Error(data.error || "Something went wrong");
+  return data;
+}
+
+// Run an action and say so if it failed.
+const act = (path, body, done) =>
+  api(path, body).then(() => { if (done) toast(done); refresh(); return true; })
+                 .catch((e) => { if (e.message !== "Not paired") toast(e.message); return false; });
+
+function showPairing() {
+  $("app").hidden = $("nav").hidden = true;
+  $("pair").hidden = false;
+  $("pin").focus();
+}
+
+function duration(seconds) {
+  const d = Math.floor(seconds / 86400), h = Math.floor(seconds % 86400 / 3600),
+        m = Math.floor(seconds % 3600 / 60);
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
+function darken(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return "#" + [n >> 16, n >> 8 & 255, n & 255].map((c) => Math.round(c * .45).toString(16).padStart(2, "0")).join("");
+}
+
+function renderApps() {
+  const apps = $("apps");
+  apps.replaceChildren(...state.apps.map((app) => {
+    const tile = document.createElement("button");
+    tile.className = "app" + (app.running ? " running" : "");
+    tile.style.background = `linear-gradient(135deg, ${app.color}, ${darken(app.color)})`;
+    tile.textContent = app.name;
+    tile.onclick = () => act("/api/launch", { id: app.id }, `Opening ${app.name}`);
+    return tile;
+  }));
+
+  const web = state.apps.filter((a) => a.removable);
+  $("webapps").replaceChildren(...web.map((app) => {
+    const item = document.createElement("div"), name = document.createElement("span"),
+          remove = document.createElement("button");
+    item.className = "item";
+    name.textContent = app.name;
+    remove.textContent = "Remove";
+    remove.className = "danger";
+    remove.onclick = () => confirm(`Remove ${app.name} from the TV?`) &&
+      act("/api/remove-webapp", { id: app.id }, `${app.name} removed`);
+    item.append(name, remove);
+    return item;
+  }));
+  $("apk-box").hidden = state.android !== "ready";
+}
+
+function render() {
+  $("pair").hidden = true;
+  $("app").hidden = $("nav").hidden = false;
+  $("name").textContent = state.name || "Lumen TV";
+  document.title = state.name ? `${state.name} · Lumen TV` : "Lumen TV";
+  $("showing").textContent = "On screen: " + state.showing.replace(/^(web|app)-/, "");
+
+  // Rebuild the lists only when they changed, so a tap is never lost mid-refresh.
+  const signature = JSON.stringify([state.apps, state.android]);
+  if (signature !== render.last) renderApps();
+  render.last = signature;
+
+  const s = state.stats;
+  const rows = [
+    ["Device", s.model],
+    ["Lumen TV", state.version + (state.commit ? ` (${state.commit})` : "")],
+    ["Memory", `${(s.memory_used_mb / 1024).toFixed(1)} of ${(s.memory_total_mb / 1024).toFixed(1)} GB used`],
+    ["Temperature", s.temperature_c == null ? "—" : `${s.temperature_c} °C`],
+    ["Running for", duration(s.uptime_s)],
+  ];
+  $("stats").replaceChildren(...rows.flatMap(([k, v]) => {
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = k; dd.textContent = v;
+    return [dt, dd];
+  }));
+  $("job").textContent = state.job.name ? `${state.job.name}: ${state.job.status}` : "";
+  $("update").disabled = $("apk-send").disabled = state.job.running;
+}
+
+async function refresh() {
+  try { state = await api("/api/state"); render(); } catch (e) { /* pairing screen or offline */ }
+}
+
+// --- remote buttons: tap once, or hold to repeat ---
+const sendKey = (key) => api("/api/key", { key }).catch((e) => { if (e.message !== "Not paired") toast(e.message); });
+document.querySelectorAll("[data-key]").forEach((button) => {
+  let delay = 0, repeat = 0;
+  const stop = () => { clearTimeout(delay); clearInterval(repeat); };
+  button.addEventListener("pointerdown", () => {
+    sendKey(button.dataset.key);
+    if (button.dataset.repeat !== undefined)
+      delay = setTimeout(() => { repeat = setInterval(() => sendKey(button.dataset.key), 140); }, 420);
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((type) => button.addEventListener(type, stop));
+  // Keyboard and assistive technology activate without pointer events.
+  button.addEventListener("click", (e) => { if (e.detail === 0) sendKey(button.dataset.key); });
+  if (["home", "close", "keyboard"].includes(button.dataset.key))
+    button.addEventListener("pointerup", () => setTimeout(refresh, 400));
+});
+
+// A computer's own keyboard works as the remote too.
+const KEYMAP = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+                 Enter: "ok", Escape: "back", Backspace: "back" };
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, button") || $("tab-remote").hidden || $("app").hidden) return;
+  if (KEYMAP[e.key]) { e.preventDefault(); sendKey(KEYMAP[e.key]); }
+});
+
+$("pair-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("pair-error").textContent = "";
+  try { await api("/api/pair", { pin: $("pin").value }); $("pin").value = ""; refresh(); }
+  catch (err) { $("pair-error").textContent = err.message === "Not paired" ? "Wrong PIN" : err.message; }
+});
+$("text-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if ($("text").value && await act("/api/text", { text: $("text").value })) $("text").value = "";
+});
+$("url-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (await act("/api/open-url", { url: $("url").value }, "Opening on the TV")) $("url").value = "";
+});
+$("webapp-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("webapp-name").value.trim();
+  if (await act("/api/add-webapp", { name, url: $("webapp-url").value }, `${name} added`))
+    $("webapp-name").value = $("webapp-url").value = "";
+});
+$("apk-send").addEventListener("click", async () => {
+  const file = $("apk").files[0];
+  if (!file) return toast("Choose an .apk file first");
+  toast("Sending to the TV…");
+  try {
+    await api("/api/apk?name=" + encodeURIComponent(file.name), file, true);
+    $("apk").value = "";
+    toast("Installing on the TV");
+    refresh();
+  } catch (err) { toast(err.message); }
+});
+$("update").addEventListener("click", () => act("/api/update", {}, "Checking for updates"));
+document.querySelectorAll("[data-power]").forEach((button) => button.addEventListener("click", () => {
+  const action = button.dataset.power;
+  if (confirm(action === "restart" ? "Restart the TV now?" : "Shut the TV down now?"))
+    act("/api/power", { action }, action === "restart" ? "Restarting" : "Shutting down");
+}));
+$("log-load").addEventListener("click", async () => {
+  try {
+    $("log").textContent = (await api("/api/log")).log || "The log is empty.";
+    $("log").hidden = false;
+    $("log").scrollTop = $("log").scrollHeight;
+  } catch (err) { toast(err.message); }
+});
+const TABS = ["remote", "apps", "system"];
+function showTab(name) {
+  if (!TABS.includes(name)) name = "remote";
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === name));
+  TABS.forEach((tab) => { $("tab-" + tab).hidden = tab !== name; });
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("nav button").forEach((button) => button.addEventListener("click", () => {
+  history.replaceState(null, "", "#" + button.dataset.tab);    // reopening keeps the tab
+  showTab(button.dataset.tab);
+}));
+showTab(location.hash.slice(1));
+
+refresh();
+setInterval(() => { if (!document.hidden && !$("app").hidden) refresh(); }, 4000);
+</script>
+</body>
+</html>

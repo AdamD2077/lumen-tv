@@ -190,7 +190,7 @@ fi
 if [ "$UPDATE" = 1 ]; then
     # Restart the controller daemon on the new code (the session restarts it);
     # the launcher restarts itself once it sees the update succeeded.
-    pkill -u "$TV_USER" -f "lumen\.input" || true
+    pkill -u "$TV_USER" -f "lumen\.(input|remote)" || true
     say "Lumen TV is updated"
     exit 0
 fi

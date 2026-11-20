@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -71,6 +72,39 @@ def normalize_url(text):
     if text and not re.match(r"^[a-z][a-z0-9+.-]*://", text, re.I):
         text = "https://" + text
     return text
+
+
+def add_web_app(cfg, name, url):
+    """Add a web app to the config (and the favorites row). Returns its id."""
+    taken = {a.id for a in all_apps({**cfg, "hidden": []})}
+    app_id = base = slugify(name)
+    n = 2
+    while app_id in taken:
+        app_id, n = f"{base}-{n}", n + 1
+    cfg["web_apps"].append({"id": app_id, "name": name, "url": normalize_url(url)})
+    cfg["favorites"].append(app_id)
+    return app_id
+
+
+def remove_web_app(cfg, app_id):
+    """Remove a web app and its sign-in data. Returns False if there is none."""
+    kept = [w for w in cfg["web_apps"] if w.get("id") != app_id]
+    if len(kept) == len(cfg["web_apps"]):
+        return False
+    cfg["web_apps"] = kept
+    cfg["favorites"] = [f for f in cfg["favorites"] if f != app_id]
+    shutil.rmtree(config.DATA_DIR / "chromium" / slugify(app_id), ignore_errors=True)
+    return True
+
+
+def is_web_url(url):
+    """True for a well-formed http(s) address with a host."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        parts.port                      # raises ValueError when it is not a number
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(parts.hostname)
 
 
 # --- catalogue ------------------------------------------------------------

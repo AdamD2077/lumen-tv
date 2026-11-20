@@ -24,6 +24,7 @@ custom shell on top:
 | Windows | [sway](https://swaywm.org), used only as invisible plumbing |
 | Android apps | [Waydroid](https://waydro.id), an Android container with direct GPU access |
 | Web apps and browser | Chromium in kiosk mode |
+| Remote access from a phone or PC | `lumen-remote`, a small web server written for this project |
 | Video, music, photos | mpv and imv |
 
 There is no desktop underneath, so an idle system is the launcher and little
@@ -105,6 +106,26 @@ controller-driven.
 **Files.** USB drives mount themselves and appear under Files. Photos open in
 a full-screen viewer (left/right to browse), videos and music in mpv.
 
+## Remote access
+
+Manage the TV from a phone or computer, in a web browser, with nothing to
+install. Turn it on under **Settings › Remote access**; the TV then shows an
+address (for example `http://192.168.1.50:8080`) and a six-digit PIN. Open the
+address on a device on the same network and enter the PIN once.
+
+- **Remote:** D-pad, OK, Back, Home, Menu, volume and play/pause. Type text on
+  the TV from your phone's keyboard, or send a link to open on the TV. On a
+  computer the arrow keys, Enter and Escape work as the remote.
+- **Apps:** open or close apps, add and remove web apps, and upload an `.apk`
+  to install in Android.
+- **System:** memory, temperature and uptime, update Lumen TV, restart or shut
+  down, and read the session log.
+
+It is off by default. Pairing locks for five minutes after five wrong PINs, and
+**Change PIN** signs out every paired device. The connection is plain HTTP, so
+it is meant for your home network: do not forward the port to the internet.
+There is no terminal in the web page; for a shell, enable SSH separately.
+
 ## Updating
 
 Lumen TV updates itself from this repository. Open **Settings › System
@@ -138,8 +159,11 @@ Verified:
   button mapping, key repeat, pointer, hot-unplug.
 - The updater script against a local git repository: check, apply, a second
   update, and the failure cases (server unreachable, bad download).
+- Remote access: pairing, PIN lock-out, refusal of unpaired and cross-site
+  requests, the remote keys, typing, and web app management, against the real
+  server. The web page itself has **not** been viewed in a browser yet.
 - `python3 -m unittest discover tests` covers the controller mapping, keyboard
-  layout, sway protocol, app catalogue, settings parsing and the updater.
+  layout, sway protocol, app catalogue, settings parsing, remote access and the updater.
 
 Not yet verified, because they need the real hardware:
 
@@ -158,7 +182,7 @@ Expect to fix a few things on first boot.
 
 ```
 lumen/        the launcher and input daemon (Python)
-bin/          session, launcher scripts and the Android helper
+bin/          session, launcher scripts, updater and the Android helper
 config/       sway, mpv and imv configuration
 install.sh    installer for Raspberry Pi OS Lite
 image/        pi-gen stage for building a flashable image

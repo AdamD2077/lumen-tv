@@ -285,6 +285,9 @@ class Shell(Gtk.ApplicationWindow):
         self.sway.setup_outputs(self.cfg["prefer_1080p"])
         # Look for an update shortly after start-up, without getting in the way.
         GLib.timeout_add_seconds(45, self.check_for_update)
+        # The web remote can change the configuration (for example add a web app).
+        self.config_mtime = self.config_stamp()
+        GLib.timeout_add_seconds(2, self.watch_config)
         if self.cfg["android_autostart"] and catalog.android_state() == "ready":
             run_async(lambda: catalog.android_helper("ensure"))
 
@@ -576,6 +579,23 @@ class Shell(Gtk.ApplicationWindow):
     def save(self):
         config.save(self.cfg)
         self.reload_apps()
+
+    @staticmethod
+    def config_stamp():
+        try:
+            return config.CONFIG_FILE.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    def watch_config(self):
+        stamp = self.config_stamp()
+        if stamp != self.config_mtime:
+            self.config_mtime = stamp
+            changed = config.load()
+            if changed != self.cfg:         # not one of our own saves
+                self.cfg = changed
+                self.reload_apps()
+        return True
 
     def refresh_running(self):
         running = self.launcher.running()
