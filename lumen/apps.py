@@ -87,6 +87,47 @@ def add_web_app(cfg, name, url):
     return app_id
 
 
+def edit_web_app(cfg, app_id, name=None, url=None, tv=None, zoom=None):
+    """Change a web app in the config; only the given fields are touched.
+
+    `tv` switches the TV user agent on or off (sites such as YouTube then
+    serve their remote-friendly interface). The app keeps its id, so its
+    place on the home screen and its sign-in survive. Returns False if there
+    is no such app or a value is not usable."""
+    entry = next((w for w in cfg["web_apps"] if w.get("id") == app_id), None)
+    if entry is None:
+        return False
+    if name is not None:
+        name = name.strip()
+        if not name:
+            return False
+        entry["name"] = name[:40]
+    if url is not None:
+        url = normalize_url(url)
+        if not is_web_url(url):
+            return False
+        if url != entry.get("url"):
+            entry["url"] = url
+            entry.pop("desc", None)         # the description named the old site
+            # The icon belonged to the old address: fetch the new site's.
+            icon = icons.icon_path(slugify(app_id))
+            for stale in (icon, icon.with_suffix(".none")):
+                stale.unlink(missing_ok=True)
+    if tv is not None:
+        if tv:
+            entry["user_agent"] = config.TV_USER_AGENT
+        else:
+            entry.pop("user_agent", None)
+    if zoom is not None:
+        if zoom in (0, 1, 1.0):
+            entry.pop("zoom", None)
+        elif 0.5 <= zoom <= 3:
+            entry["zoom"] = zoom
+        else:
+            return False
+    return True
+
+
 def remove_web_app(cfg, app_id):
     """Remove a web app and its sign-in data. Returns False if there is none."""
     kept = [w for w in cfg["web_apps"] if w.get("id") != app_id]
@@ -105,7 +146,11 @@ def is_web_url(url):
         parts.port                      # raises ValueError when it is not a number
     except ValueError:
         return False
-    return parts.scheme in ("http", "https") and bool(parts.hostname)
+    if parts.scheme not in ("http", "https") or re.search(r"\s", url):
+        return False
+    # A host name, an IPv4 address, or an IPv6 address (urlsplit strips its brackets).
+    return bool(re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|[0-9A-Fa-f:.]+",
+                             parts.hostname or ""))
 
 
 # --- catalogue ------------------------------------------------------------

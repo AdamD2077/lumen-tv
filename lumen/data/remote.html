@@ -280,14 +280,23 @@ function renderApps() {
   const web = state.apps.filter((a) => a.removable);
   $("webapps").replaceChildren(...web.map((app) => {
     const item = document.createElement("div"), name = document.createElement("span"),
-          remove = document.createElement("button");
+          edit = document.createElement("button"), remove = document.createElement("button");
     item.className = "item";
     name.textContent = app.name;
+    edit.textContent = "Edit";
+    edit.onclick = () => {
+      const newName = prompt("Name", app.name);
+      if (newName === null) return;
+      const newUrl = prompt("Address", app.url);
+      if (newUrl === null) return;
+      const tv = confirm("Ask the site for its TV interface?\n\nOK = yes (sites such as YouTube), Cancel = no (most sites)");
+      act("/api/edit-webapp", { id: app.id, name: newName, url: newUrl, tv }, `${newName} updated`);
+    };
     remove.textContent = "Remove";
     remove.className = "danger";
     remove.onclick = () => confirm(`Remove ${app.name} from the TV?`) &&
       act("/api/remove-webapp", { id: app.id }, `${app.name} removed`);
-    item.append(name, remove);
+    item.append(name, edit, remove);
     return item;
   }));
   $("apk-box").hidden = state.android !== "ready";

@@ -103,7 +103,9 @@ standard tablet one, put its `system.img` and `vendor.img` in
 
 **Web apps.** Any website can be a full-screen app: Settings › Web apps › Add
 a web app. YouTube is preconfigured to load its TV interface, which is fully
-controller-driven. Each web app's tile shows the site's own icon, downloaded
+controller-driven. To change one later, focus its tile, press **Start** and
+choose **Edit**: name, address, whether to ask the site for its TV interface,
+and zoom. Each web app's tile shows the site's own icon, downloaded
 from the site the first time and cached (nothing is bundled).
 
 **Store.** The Store tile lists Linux apps from Flathub, filtered to those

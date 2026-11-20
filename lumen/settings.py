@@ -501,6 +501,56 @@ def webapp_items(shell, page):
     ]
 
 
+ZOOM_STEPS = [1, 1.25, 1.5, 1.75, 2]
+
+
+def webapp_edit_page(shell, app_id):
+    """Edit one web app. Every change is saved at once."""
+    def entry():
+        return next((w for w in shell.cfg["web_apps"] if w.get("id") == app_id), None)
+
+    def change(page, **fields):
+        if catalog.edit_web_app(shell.cfg, app_id, **fields):
+            shell.save()
+        else:
+            shell.toast("That is not a usable value")
+        page.refresh()
+
+    def build(page):
+        web = entry()
+        if web is None:
+            return [Item("This web app no longer exists")]
+        zoom = web.get("zoom") or 1
+        tv = bool(web.get("user_agent"))
+
+        def next_zoom():
+            later = [z for z in ZOOM_STEPS if z > zoom]
+            change(page, zoom=later[0] if later else ZOOM_STEPS[0])
+
+        return [
+            Item("Name", icon="info", value=web.get("name", ""),
+                 action=lambda: shell.push(PromptPage(
+                     shell, "Name", lambda text: change(page, name=text),
+                     initial=web.get("name", ""), glyph="globe",
+                     subtitle="What the app is called on the home screen"))),
+            Item("Address", icon="globe", value=web.get("url", ""),
+                 action=lambda: shell.push(PromptPage(
+                     shell, "Address", lambda text: change(page, url=text),
+                     initial=web.get("url", ""), glyph="globe",
+                     subtitle="The web address this app opens"))),
+            Item("TV interface", "Ask the site for its TV version, where it has one "
+                 "(YouTube does)", "display", "On" if tv else "Off",
+                 action=lambda: change(page, tv=not tv)),
+            Item("Zoom", "Make the site larger for viewing from the sofa", "search",
+                 f"{round(zoom * 100)}%", action=next_zoom),
+        ]
+
+    web = entry()
+    return ListPage(shell, "Edit", build, glyph="globe",
+                    subtitle=(web or {}).get("name", "") + ". Changes apply the next time "
+                             "the app is opened.")
+
+
 # --- android ------------------------------------------------------------
 
 def find_files(roots, extensions, limit=200):
@@ -804,6 +854,8 @@ def app_menu_items(shell, app):
         items.append(Item("Close app", "It is still running in the background", "close",
                           action=close))
     if app.kind == "web":
+        items.append(Item("Edit", "Name, address, TV interface and zoom", "settings",
+                          action=lambda: shell.push(webapp_edit_page(shell, app.id))))
         items.append(Item("Remove", "Delete this web app from Lumen TV", "trash",
                           action=remove))
     elif app.kind == "android":

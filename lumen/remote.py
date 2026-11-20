@@ -240,6 +240,7 @@ class Device:
             "commit": read(config.ROOT / "COMMIT")[:7],
             "showing": "Home" if focused in (None, HOME_WS) else focused,
             "apps": [{"id": a.id, "name": a.name, "kind": a.kind, "color": a.color,
+                      "url": a.url, "tv": bool(a.user_agent),
                       "removable": a.kind == "web", "running": a.workspace in running}
                      for a in catalog.all_apps(cfg)
                      if a.kind != "system" or a.id in ("browser", "android")],
@@ -342,6 +343,21 @@ class Device:
             raise ApiError("A name and a web address are needed")
         cfg = self.cfg()
         catalog.add_web_app(cfg, name, url)
+        config.save(cfg, self.config_path)
+
+    def do_edit_webapp(self, body):
+        cfg = self.cfg()
+        if not any(w.get("id") == body.get("id") for w in cfg["web_apps"]):
+            raise ApiError("No such web app", 404)
+        fields = {}
+        if "name" in body:
+            fields["name"] = str(body["name"])
+        if "url" in body:
+            fields["url"] = str(body["url"])
+        if "tv" in body:
+            fields["tv"] = bool(body["tv"])
+        if not catalog.edit_web_app(cfg, body["id"], **fields):
+            raise ApiError("A name and a web address are needed")
         config.save(cfg, self.config_path)
 
     def do_remove_webapp(self, body):

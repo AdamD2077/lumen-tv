@@ -371,9 +371,42 @@ class AppsTest(unittest.TestCase):
         self.assertEqual(apps.file_cmd("/x/film.mkv")[0], "mpv")
         self.assertIsNone(apps.file_cmd("/x/notes.txt"))
 
+    def test_editing_a_web_app(self):
+        cfg = config.load(path="/nonexistent")
+        before = [w["id"] for w in cfg["web_apps"]]
+        self.assertTrue(apps.edit_web_app(cfg, "plex", name="  My Plex ", url="nas.local:32400/web"))
+        plex = next(w for w in cfg["web_apps"] if w["id"] == "plex")
+        self.assertEqual((plex["name"], plex["url"]), ("My Plex", "https://nas.local:32400/web"))
+        self.assertNotIn("desc", plex)                       # it described the old site
+        self.assertEqual([w["id"] for w in cfg["web_apps"]], before)    # same id, same place
+
+        self.assertNotIn("user_agent", plex)
+        self.assertTrue(apps.edit_web_app(cfg, "plex", tv=True))
+        self.assertEqual(plex["user_agent"], config.TV_USER_AGENT)
+        self.assertTrue(apps.edit_web_app(cfg, "plex", tv=False, zoom=1.5))
+        self.assertNotIn("user_agent", plex)
+        self.assertEqual(plex["zoom"], 1.5)
+        self.assertTrue(apps.edit_web_app(cfg, "plex", zoom=1))
+        self.assertNotIn("zoom", plex)
+        self.assertEqual(plex["name"], "My Plex")            # untouched fields stay
+
+        for bad in ({"name": "   "}, {"url": "javascript:alert(1)"}, {"url": ""}, {"zoom": 40}):
+            self.assertFalse(apps.edit_web_app(cfg, "plex", **bad), bad)
+        self.assertEqual(plex["url"], "https://nas.local:32400/web")
+        self.assertFalse(apps.edit_web_app(cfg, "no-such-app", name="X"))
+        # The catalogue shows the edited app.
+        shown = next(a for a in apps.web_apps(cfg) if a.id == "plex")
+        self.assertEqual((shown.name, shown.url, shown.desc), ("My Plex", plex["url"], "nas.local:32400"))
+
     def test_url_and_slug_helpers(self):
         self.assertEqual(apps.normalize_url(" example.org/tv "), "https://example.org/tv")
         self.assertEqual(apps.normalize_url("http://nas.local:8096"), "http://nas.local:8096")
+        for good in ("https://example.org", "http://nas.local:8096/web", "http://192.168.1.5",
+                     "https://[fe80::1]:8443/x", "https://a.b-c.io/?q=1"):
+            self.assertTrue(apps.is_web_url(good), good)
+        for bad in ("https://not a url", "https:// example.org", "https://", "ftp://x.org",
+                    "https://x.org:port", "https://-bad-.org", "https://exa_mple!.org", ""):
+            self.assertFalse(apps.is_web_url(bad), bad)
         self.assertEqual(apps.slugify("My Jellyfin!"), "my-jellyfin")
         self.assertRegex(apps.color_for("anything"), r"^#[0-9a-f]{6}$")
         self.assertEqual(apps.darken("#ff8000", 0.5), "#7f4000")
@@ -839,6 +872,18 @@ class RemoteApiTest(unittest.TestCase):
                     {"name": "X", "url": ""}):
             self.assertEqual(self.call("POST", "/api/add-webapp", bad)[0].status, 400, bad)
 
+        self.assertEqual(self.call("POST", "/api/edit-webapp", {
+            "id": "jellyfin", "name": "Jelly", "url": "http://nas.local:8096", "tv": True})[0].status, 200)
+        edited = next(w for w in config.load(self.config_path)["web_apps"] if w["id"] == "jellyfin")
+        self.assertEqual((edited["name"], edited["url"]), ("Jelly", "http://nas.local:8096"))
+        self.assertTrue(edited["user_agent"])
+        self.assertEqual(self.call("POST", "/api/edit-webapp",
+                                   {"id": "jellyfin", "url": "not a url at all"})[0].status, 400)
+        self.assertEqual(self.call("POST", "/api/edit-webapp",
+                                   {"id": "nope", "name": "X"})[0].status, 404)
+        state = self.call("GET", "/api/state")[1]
+        self.assertEqual(next(a for a in state["apps"] if a["id"] == "jellyfin")["url"],
+                         "http://nas.local:8096")
         self.assertEqual(self.call("POST", "/api/remove-webapp", {"id": "jellyfin"})[0].status, 200)
         saved = config.load(self.config_path)
         self.assertNotIn("jellyfin", [w["id"] for w in saved["web_apps"]])
