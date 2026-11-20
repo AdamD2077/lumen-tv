@@ -195,8 +195,12 @@
           <button class="danger" data-power="shutdown">Shut down</button>
         </div>
       </div>
-      <h2>Session log</h2>
-      <button id="log-load" style="width: 100%">Show the log</button>
+      <h2>Troubleshooting</h2>
+      <div class="row">
+        <button id="log-load">Session log</button>
+        <button id="diag-load">Diagnostics</button>
+        <button id="diag-copy" hidden>Copy</button>
+      </div>
       <pre id="log" hidden></pre>
     </section>
   </div>
@@ -392,7 +396,18 @@ $("log-load").addEventListener("click", async () => {
 const TABS = ["remote", "apps", "system"];
 function showTab(name) {
   if (!TABS.includes(name)) name = "remote";
-  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === name));
+  $("diag-load").addEventListener("click", async () => {
+  toast("Collecting diagnostics…");
+  try {
+    $("log").textContent = (await api("/api/diagnostics")).report;
+    $("log").hidden = $("diag-copy").hidden = false;
+  } catch (err) { toast(err.message); }
+});
+$("diag-copy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("log").textContent); toast("Copied"); }
+  catch (e) { toast("Select the text and copy it by hand"); }
+});
+document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === name));
   TABS.forEach((tab) => { $("tab-" + tab).hidden = tab !== name; });
   window.scrollTo(0, 0);
 }

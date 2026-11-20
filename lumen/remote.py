@@ -155,6 +155,47 @@ def system_stats():
     }
 
 
+# Read-only commands whose output helps explain a problem. Fixed list: the
+# web page can ask for the report but cannot choose what is run.
+DIAGNOSTICS = [
+    ("System", "uname -srm; getconf PAGESIZE; cat /proc/cmdline"),
+    ("Boot configuration", "grep -v '^#' /boot/firmware/config.txt | grep -v '^$' | tail -n 25"),
+    ("Memory and storage", "free -m; df -h / | tail -n 1"),
+    ("Graphics devices", "ls -l /dev/dri/ 2>&1; ls /sys/class/drm/ 2>&1 | tr '\\n' ' '"),
+    ("Session", "echo WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR "
+                "SWAYSOCK=${SWAYSOCK:+set}; id; pgrep -a -u \"$(id -u)\" -f "
+                "'sway|lumen|waydroid|chromium|flatpak' | cut -c1-150"),
+    ("Android: status", "waydroid status 2>&1; echo; waydroid --version 2>&1"),
+    ("Android: container service",
+     "systemctl is-enabled waydroid-container 2>&1; systemctl is-active waydroid-container "
+     "2>&1; systemctl status waydroid-container --no-pager -n 25 2>&1 | tail -n 30"),
+    ("Android: kernel support",
+     "grep -i binder /proc/filesystems 2>&1; ls -l /dev/binder* /dev/binderfs 2>&1 | head; "
+     "lsmod | grep -i -E 'binder|ashmem' ; cat /proc/pressure/memory 2>&1 | head -n 2"),
+    ("Android: files", "ls -la /var/lib/waydroid/ 2>&1; ls -la /var/lib/waydroid/images 2>&1; "
+                       "ls ~/.local/share/applications 2>&1 | head -n 30"),
+    ("Android: configuration", "cat /var/lib/waydroid/waydroid.cfg 2>&1 | head -n 40"),
+    ("Android: log", "tail -n 120 /var/lib/waydroid/waydroid.log 2>&1"),
+    ("Android: setup log", "tail -n 40 /var/log/lumen-android-setup.log 2>&1"),
+    ("Update log", "tail -n 25 /var/log/lumen-update.log 2>&1"),
+    ("First-boot log", "tail -n 15 /var/log/lumen-firstboot.log 2>&1"),
+    ("Kernel messages", "dmesg 2>&1 | grep -i -E 'binder|waydroid|lxc|v3d|oom|apparmor' "
+                        "| tail -n 40"),
+]
+
+
+def diagnostics():
+    parts = []
+    for title, command in DIAGNOSTICS:
+        try:
+            p = subprocess.run(["sh", "-c", command], capture_output=True, text=True, timeout=20)
+            output = (p.stdout + p.stderr).strip()
+        except subprocess.SubprocessError:
+            output = "(timed out)"
+        parts.append(f"== {title}\n{output or '(nothing)'}")
+    return {"report": "\n\n".join(parts)}
+
+
 class Device:
     """What the web app can do. Each `do_<name>` is one API action."""
 
@@ -183,7 +224,8 @@ class Device:
             "showing": "Home" if focused in (None, HOME_WS) else focused,
             "apps": [{"id": a.id, "name": a.name, "kind": a.kind, "color": a.color,
                       "removable": a.kind == "web", "running": a.workspace in running}
-                     for a in catalog.all_apps(cfg) if a.kind != "system" or a.id == "browser"],
+                     for a in catalog.all_apps(cfg)
+                     if a.kind != "system" or a.id in ("browser", "android")],
             "android": catalog.android_state(),
             "stats": system_stats(),
             "job": dict(self.job),
@@ -249,7 +291,7 @@ class Device:
                 error = self.launcher.open_url(self.cfg()["browser_home"])
         elif app.kind == "flatpak":
             error = self.launcher.launch_flatpak(app)
-        elif app.kind == "android":
+        elif app.kind == "android" or app.id == "android":
             if catalog.android_state() != "ready":
                 raise ApiError("Android is not set up on the TV yet")
 
@@ -257,7 +299,7 @@ class Device:
                 result = catalog.android_helper("ensure")
                 if result.returncode != 0:
                     return "Failed: " + (result.stderr.strip().splitlines() or ["Android"])[-1]
-                self.launcher.show_android(app.package)
+                self.launcher.show_android(app.package or None)   # none: Android's home
                 return f"Opened {app.name}"
 
             return self._background(f"Opening {app.name}", start)
@@ -403,6 +445,8 @@ def make_handler(auth, device):
                 return self.guard(device.state)
             if path == "/api/log":
                 return self.guard(device.log)
+            if path == "/api/diagnostics":
+                return self.guard(diagnostics)
             self.reply(404, {"error": "Not found"})
 
         def do_POST(self):

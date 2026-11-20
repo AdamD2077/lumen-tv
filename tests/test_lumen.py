@@ -699,6 +699,7 @@ class RemoteApiTest(unittest.TestCase):
         self.assertIn(b"Lumen TV", page)
         self.assertNotIn(self.auth.pin.encode(), page)
         for method, path in (("GET", "/api/state"), ("GET", "/api/log"),
+                             ("GET", "/api/diagnostics"),
                              ("POST", "/api/key"), ("POST", "/api/power"),
                              ("POST", "/api/add-webapp"), ("POST", "/api/apk?name=a.apk")):
             response, _ = self.call(method, path, {"key": "ok", "action": "restart"})
@@ -763,6 +764,17 @@ class RemoteApiTest(unittest.TestCase):
         self.assertNotIn("jellyfin", [w["id"] for w in saved["web_apps"]])
         self.assertNotIn("jellyfin", saved["favorites"])
         self.assertEqual(self.call("POST", "/api/remove-webapp", {"id": "jellyfin"})[0].status, 404)
+
+    def test_diagnostics_report(self):
+        self.pair()
+        response, body = self.call("GET", "/api/diagnostics")
+        self.assertEqual(response.status, 200)
+        for title, _command in self.remote.DIAGNOSTICS:
+            self.assertIn(f"== {title}", body["report"])
+        self.assertIn("Linux", body["report"])
+        # Nothing the client sends can change what is run.
+        response, _ = self.call("GET", "/api/diagnostics?cmd=reboot;id")
+        self.assertEqual(response.status, 200)
 
     def test_links_and_uploads_are_validated(self):
         self.pair()
