@@ -1,0 +1,21 @@
+name: Build image
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  image:
+    # A native ARM runner, so the image builds without emulation.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Lumen TV image
+        run: image/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumen-tv-image
+          path: build/pi-gen/deploy/*.img.xz
+          if-no-files-found: error

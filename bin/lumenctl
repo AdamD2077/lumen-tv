@@ -1,0 +1,4 @@
+#!/bin/sh
+# lumenctl home | close | osk show|hide|toggle|auto
+export PYTHONPATH="${LUMEN_HOME:-/opt/lumen}${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m lumen.ctl "$@"

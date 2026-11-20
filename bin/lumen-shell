@@ -1,0 +1,4 @@
+#!/bin/sh
+# The launcher (home screen).
+export PYTHONPATH="${LUMEN_HOME:-/opt/lumen}${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m lumen.shell "$@"

@@ -1,0 +1,26 @@
+/* Lumen TV on-screen keyboard */
+
+window.osk {
+  background-color: transparent;
+  color: #ffffff;
+  font-family: "Inter", "Cantarell", "Noto Sans", sans-serif;
+}
+window.osk button { all: unset; }
+
+window.osk .panel {
+  padding: 22px 26px 16px 26px;
+  border-radius: 28px;
+  background-color: rgba(18, 22, 29, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+window.osk .key {
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.08);
+  font-size: 27px;
+  font-weight: 600;
+  transition: background-color 90ms ease, transform 90ms ease;
+}
+window.osk .key.special { background-color: rgba(255, 255, 255, 0.15); font-size: 22px; }
+window.osk .key.on { background-color: #6ea8ff; color: #0b0e13; }
+window.osk .key.sel { background-color: #ffffff; color: #0b0e13; transform: scale(1.08); }
+window.osk .hint { font-size: 16px; color: rgba(255, 255, 255, 0.5); }

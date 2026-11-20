@@ -1,0 +1,22 @@
+#!/bin/sh
+# Starts the Lumen TV session: sway with the launcher on top. Run from tty1.
+export LUMEN_HOME="${LUMEN_HOME:-/opt/lumen}"
+export PATH="$LUMEN_HOME/bin:$PATH"
+export XDG_CURRENT_DESKTOP=sway
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=lumen
+# GTK's Vulkan renderer is not dependable on the Pi's GPU; OpenGL is.
+export GSK_RENDERER="${GSK_RENDERER:-ngl}"
+
+log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/lumen"
+mkdir -p "$log_dir"
+
+# HDMI-CEC: announce ourselves as a playback device so the TV forwards its
+# remote's keys to us. Harmless when the TV has no CEC.
+if command -v cec-ctl >/dev/null 2>&1; then
+    for dev in /dev/cec*; do
+        [ -e "$dev" ] && cec-ctl -d "$dev" --playback -o "Lumen TV" >/dev/null 2>&1
+    done
+fi
+
+exec sway -c "$LUMEN_HOME/config/sway.config" >"$log_dir/session.log" 2>&1

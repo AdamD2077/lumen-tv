@@ -1,0 +1,77 @@
+#!/bin/bash
+# Lumen TV updater: installs the latest version from the project's git repository.
+#
+#   lumen-update check    print installed= and latest= commit ids (no root needed)
+#   lumen-update apply    download the latest version and install it (root)
+#
+# The repository and branch come from /etc/lumen/update.conf.
+set -u
+
+CONF=/etc/lumen/update.conf
+HOME_DIR=/opt/lumen
+SRC_DIR=/var/lib/lumen/src
+if [ "$(id -u)" != 0 ]; then
+    # Overrides for development and tests. Ignored when running as root, so
+    # they can never redirect a privileged update.
+    CONF="${LUMEN_UPDATE_CONF:-$CONF}"
+    HOME_DIR="${LUMEN_HOME:-$HOME_DIR}"
+    SRC_DIR="${LUMEN_UPDATE_SRC:-$SRC_DIR}"
+fi
+
+# Errors also go to fd 3: the caller's stderr once output is sent to the log.
+exec 3>&2
+LOGGING=0
+die() { echo "$*" >&3; [ "$LOGGING" = 1 ] && echo "ERROR: $*"; exit 1; }
+
+REPO=""
+BRANCH=main
+[ -r "$CONF" ] || die "No update source configured ($CONF is missing)"
+# Read KEY=VALUE lines without executing the file.
+while IFS='=' read -r key value; do
+    case "$key" in
+        REPO)   REPO="$value" ;;
+        BRANCH) BRANCH="$value" ;;
+    esac
+done < "$CONF"
+[ -n "$REPO" ] || die "No update source configured (REPO is empty in $CONF)"
+command -v git >/dev/null || die "git is not installed"
+export GIT_TERMINAL_PROMPT=0
+
+installed() { cat "$HOME_DIR/COMMIT" 2>/dev/null || echo unknown; }
+
+latest() {
+    local id
+    id="$(git ls-remote "$REPO" "refs/heads/$BRANCH" 2>/dev/null | cut -f1)"
+    [ -n "$id" ] || die "Could not reach the update server"
+    echo "$id"
+}
+
+case "${1:-}" in
+    check)
+        new="$(latest)" || exit 1
+        echo "installed=$(installed)"
+        echo "latest=$new"
+        ;;
+    apply)
+        [ "$(id -u)" = 0 ] || [ -n "${LUMEN_UPDATE_SRC:-}" ] || die "lumen-update apply must run as root"
+        if [ "$(id -u)" = 0 ]; then
+            exec >>/var/log/lumen-update.log 2>&1
+            LOGGING=1
+            echo "=== $(date) updating from $REPO ($BRANCH)"
+        fi
+        # A fresh download every time: nothing left over from an interrupted one.
+        tmp="$SRC_DIR.new"
+        rm -rf "$tmp"
+        mkdir -p "$(dirname "$SRC_DIR")"
+        git clone --quiet --depth 1 --branch "$BRANCH" "$REPO" "$tmp" || die "Download failed"
+        [ -f "$tmp/install.sh" ] || die "The download does not look like Lumen TV"
+        rm -rf "$SRC_DIR"
+        mv "$tmp" "$SRC_DIR"
+        # The installer is safe to re-run; it also picks up new dependencies.
+        LUMEN_UPDATE=1 bash "$SRC_DIR/install.sh" || die "Installing the update failed"
+        echo "=== updated to $(installed)"
+        ;;
+    *)
+        die "usage: lumen-update check|apply"
+        ;;
+esac

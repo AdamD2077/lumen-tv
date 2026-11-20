@@ -1,0 +1,123 @@
+/* Lumen TV launcher. Sizes assume a 1920x1080 canvas viewed from the sofa. */
+
+window {
+  background-color: #090c11;
+  color: #ffffff;
+  font-family: "Inter", "Cantarell", "Noto Sans", sans-serif;
+  font-size: 22px;
+}
+
+button, entry, scrolledwindow { all: unset; }
+
+.root { background-color: #090c11; }
+.glow { transition: background-image 450ms ease; }
+
+/* --- top bar --- */
+.tab {
+  padding: 10px 24px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.tab image { opacity: 0.6; }
+.tab.current { color: #ffffff; }
+.tab.current image { opacity: 1; }
+.tab.focused { background-color: #ffffff; color: #0b0e13; }
+.tab.focused image { filter: invert(1); opacity: 1; }
+.status { color: rgba(255, 255, 255, 0.62); font-size: 20px; margin-right: 22px; }
+.clock { font-size: 24px; font-weight: 600; }
+
+/* --- home hero --- */
+.hero { padding-bottom: 26px; }
+.hero-kind {
+  font-size: 15px; font-weight: 700; letter-spacing: 3px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.hero-title { font-size: 68px; font-weight: 800; letter-spacing: -1.5px; }
+.hero-desc { font-size: 23px; color: rgba(255, 255, 255, 0.74); }
+
+/* --- cards --- */
+.row-title { font-size: 22px; font-weight: 700; color: rgba(255, 255, 255, 0.9); margin-top: 6px; }
+.strip { padding: 22px 0 26px 0; }
+
+.face {
+  border-radius: 16px;
+  background-color: #1f2530;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  outline: 4px solid rgba(255, 255, 255, 0);
+  outline-offset: 4px;
+  transition: transform 160ms ease, outline-color 160ms ease, box-shadow 160ms ease;
+}
+.card.focused .face {
+  transform: scale(1.08);
+  outline-color: #ffffff;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+}
+.wordmark { font-weight: 800; letter-spacing: -0.5px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); }
+.wm-l { font-size: 40px; }
+.wm-m { font-size: 32px; }
+.wm-s { font-size: 25px; }
+.tile-name { font-size: 20px; font-weight: 700; }
+.card-name {
+  font-size: 19px; font-weight: 600; margin-left: 2px;
+  opacity: 0; transition: opacity 160ms ease;
+}
+.card.focused .card-name { opacity: 1; }
+.dot {
+  min-width: 12px; min-height: 12px; border-radius: 6px; margin: 12px;
+  background-color: #ffffff; box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25);
+}
+
+/* --- list pages (settings, files, menus) --- */
+.page-title { font-size: 54px; font-weight: 800; letter-spacing: -1px; }
+.page-sub { font-size: 22px; color: rgba(255, 255, 255, 0.62); }
+.list-page image { opacity: 0.92; }
+
+.row {
+  padding: 20px 28px;
+  min-height: 44px;
+  border-radius: 18px;
+  background-color: rgba(255, 255, 255, 0.055);
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.row-label { font-size: 24px; font-weight: 600; }
+.row-sub { font-size: 18px; color: rgba(255, 255, 255, 0.58); }
+.row-value { font-size: 21px; color: rgba(255, 255, 255, 0.72); }
+.row.focused { background-color: #f3f5f8; color: #0b0e13; transform: scale(1.015); }
+.row.focused .row-sub, .row.focused .row-value { color: rgba(11, 14, 19, 0.66); }
+.row.focused image { filter: invert(1); }
+
+entry.prompt {
+  min-height: 76px;
+  padding: 0 30px;
+  font-size: 30px;
+  border-radius: 18px;
+  color: #ffffff;
+  caret-color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(255, 255, 255, 0);
+  transition: border-color 120ms ease;
+}
+entry.prompt.focused { border-color: #ffffff; }
+entry.prompt placeholder { color: rgba(255, 255, 255, 0.42); }
+
+/* --- overlays --- */
+.toast {
+  padding: 16px 30px;
+  border-radius: 999px;
+  background-color: #f3f5f8;
+  color: #0b0e13;
+  font-size: 21px; font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.busy { background-color: rgba(6, 8, 12, 0.88); }
+.busy-label { font-size: 34px; font-weight: 700; }
+.spinner {
+  min-width: 46px; min-height: 46px;
+  border-radius: 9999px;
+  border: 5px solid rgba(255, 255, 255, 0.16);
+  border-top-color: #ffffff;
+  animation: lumen-spin 0.9s linear infinite;
+}
+@keyframes lumen-spin { to { transform: rotate(360deg); } }

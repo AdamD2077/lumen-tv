@@ -1,0 +1,23 @@
+#!/bin/bash
+# Runs as root (via sudo): download and initialise the Waydroid Android image.
+#   lumen-android-setup [--gapps]
+# To use your own images instead (for example an Android TV build), place
+# system.img and vendor.img in /etc/waydroid-extra/images/ before running this.
+set -eu
+exec >>/var/log/lumen-android-setup.log 2>&1
+echo "=== $(date) lumen-android-setup $*"
+
+[ "$(id -u)" = 0 ] || { echo "must run as root"; exit 1; }
+case "${1:-}" in
+    "")      flavour=VANILLA ;;
+    --gapps) flavour=GAPPS ;;
+    *)       echo "unknown option: $1"; exit 1 ;;
+esac
+
+if [ -e /etc/waydroid-extra/images/system.img ]; then
+    waydroid init -f
+else
+    waydroid init -s "$flavour"
+fi
+systemctl enable --now waydroid-container.service
+echo "=== done"
