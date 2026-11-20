@@ -309,6 +309,8 @@ class Shell(Gtk.ApplicationWindow):
         GLib.timeout_add_seconds(3, self.fetch_icons)
         # The web remote can change the configuration (for example add a web app).
         self.config_mtime = self.config_stamp()
+        self.apps_stamp = catalog.installed_stamp()
+        self.apps_timer = 0
         GLib.timeout_add_seconds(2, self.watch_config)
         if self.cfg["android_autostart"] and catalog.android_state() == "ready":
             run_async(lambda: catalog.android_helper("ensure"))
@@ -704,7 +706,28 @@ class Shell(Gtk.ApplicationWindow):
         except OSError:
             return None
 
+    @staticmethod
+    def catalogue_signature(apps):
+        return [(a.id, a.name, a.icon_path) for a in apps]
+
+    def apps_settled(self):
+        """An app was installed or removed somewhere (inside Android, by the
+        Store, from the web remote): show it, without waiting for a restart."""
+        self.apps_timer = 0
+        fresh = catalog.all_apps(self.cfg)
+        if self.catalogue_signature(fresh) != self.catalogue_signature(self.apps):
+            self.reload_apps()
+        return False
+
     def watch_config(self):
+        installed = catalog.installed_stamp()
+        if installed != self.apps_stamp:
+            self.apps_stamp = installed
+            # Wait for things to settle: an app's entry and its icon arrive
+            # separately, a moment apart.
+            if self.apps_timer:
+                GLib.source_remove(self.apps_timer)
+            self.apps_timer = GLib.timeout_add(1500, self.apps_settled)
         stamp = self.config_stamp()
         if stamp != self.config_mtime:
             self.config_mtime = stamp

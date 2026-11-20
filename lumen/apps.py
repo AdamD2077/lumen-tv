@@ -217,6 +217,20 @@ def flatpak_apps(dirs=None):
     return sorted(apps.values(), key=lambda a: a.name.lower())
 
 
+def installed_stamp():
+    """Changes whenever an Android or Flatpak app (or its icon) is added or
+    removed. Cheap enough to poll: it only looks at a few folders' timestamps."""
+    folders = list(android_dirs()) + [Path(d) / "applications" for d in flatpak_dirs()]
+    folders.append(Path.home() / ".local/share/waydroid/data/icons")
+    stamp = []
+    for folder in folders:
+        try:
+            stamp.append(os.stat(folder).st_mtime_ns)
+        except OSError:
+            stamp.append(None)
+    return tuple(stamp)
+
+
 def all_apps(cfg):
     hidden = set(cfg.get("hidden", []))
     apps = web_apps(cfg) + android_apps() + flatpak_apps() + system_apps()
